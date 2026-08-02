@@ -29,34 +29,53 @@ export const demoSnapshot: SnapshotResponse = {
   ts: Date.now(),
 };
 
+// Sanitized from a real Codex 0.146.0 startup frame captured in an empty repository.
+// Only the working directory differs from the captured terminal output.
 const mainOutput = [
-  "\u001b[1;36mCodex\u001b[0m  ·  \u001b[33mgpt-5.4\u001b[0m  ·  full access",
-  "~/Projects/northstar",
   "",
-  "I inspected Northstar and its mobile protocol boundaries.",
+  "\u001b[2m╭──────────────────────────────────────────────────────╮\u001b[0m",
+  "\u001b[2m│ >_ \u001b[22m\u001b[1mOpenAI Codex\u001b[22m\u001b[2m (v0.146.0)                           │\u001b[0m",
+  "\u001b[2m│                                                      │\u001b[0m",
+  "\u001b[2m│ model:       \u001b[22mgpt-5.6-terra medium\u001b[2m   \u001b[22m\u001b[38;5;6m/model\u001b[2m\u001b[39m to change │\u001b[0m",
+  "\u001b[2m│ directory:   \u001b[22m~/Projects/northstar\u001b[2m                    │\u001b[0m",
+  "\u001b[2m│ permissions: \u001b[22m\u001b[1m\u001b[38;5;5mYOLO mode\u001b[22m\u001b[2m\u001b[39m                               │\u001b[0m",
+  "\u001b[2m╰──────────────────────────────────────────────────────╯\u001b[0m",
   "",
-  "The relay stays beside Northstar so agent sessions survive mobile disconnects.",
-  "The app reads spaces, tabs, panes, and status through a bounded REST API.",
+  "  \u001b[1mTip:\u001b[22m \u001b[3mNew\u001b[23m Build faster with the \u001b[1mDesktop app\u001b[22m. Run 'codex app' or visit",
+  "  https://chatgpt.com/codex?app-landing-page=true",
   "",
-  "Completed",
-  "  \u001b[32m✓\u001b[0m mapped demo spaces into the split navigator",
-  "  ✓ kept agents globally visible by urgency",
-  "  ✓ scoped tabbed windows to the selected space",
-  "  ✓ isolated the Tailscale HTTP transport from the UI",
+  "\u001b[1m›\u001b[22m \u001b[2mUse /skills to list available skills\u001b[0m",
   "",
-  "Before I continue: should the new agent start in this space?",
+  "  \u001b[38;2;246;226;183mgpt-5.6-terra medium\u001b[2m\u001b[39m · \u001b[22m\u001b[38;2;171;223;167m~/Projects/northstar\u001b[0m\u001b[13;3H",
 ].join("\r\n");
 
+// Sanitized from a real Grok Build 0.2.114 startup frame captured at 80×24.
+// The screen contents, spacing, colors, menu, model, and footer mirror the steady TUI frame.
 const grokOutput = [
-  "\u001b[1;35mGrok\u001b[0m  ·  \u001b[36mgrok-code-fast-1\u001b[0m  ·  auto",
-  "~/Projects/northstar",
+  "\u001b[48;5;233m\u001b[2J\u001b[H",
+  "  \u001b[38;5;240m~/Projects/northstar\u001b[39m",
   "",
-  "> Analyze the relay boundary and image upload flow",
   "",
-  "Working",
-  "  \u001b[32m✓\u001b[0m read the mobile client transport",
-  "  \u001b[32m✓\u001b[0m traced staged uploads through the relay",
-  "  \u001b[36m•\u001b[0m comparing reconnect behavior across both paths",
+  "",
+  "               \u001b[1m\u001b[38;5;254mNew worktree\u001b[22m\u001b[39m                                 \u001b[38;5;243mctrl+w\u001b[39m",
+  "               \u001b[1m\u001b[38;5;254mResume session\u001b[22m\u001b[39m                               \u001b[38;5;243mctrl+s\u001b[39m",
+  "               \u001b[1m\u001b[38;5;254mChangelog\u001b[22m\u001b[39m",
+  "               \u001b[1m\u001b[38;5;254mQuit\u001b[22m\u001b[39m                                         \u001b[38;5;243mctrl+q\u001b[39m",
+  "",
+  "               \u001b[1m\u001b[38;5;179mWorkflows are here!\u001b[22m\u001b[39m",
+  "               \u001b[38;5;242mTry them out using /workflows.\u001b[39m",
+  "",
+  "",
+  "",
+  "",
+  "  \u001b[1m\u001b[38;5;251mUpdate: \u001b[22mv0.2.118 available — press ctrl+u to restart\u001b[39m",
+  "",
+  "  \u001b[38;5;239m╭──────────────────────────────────────────────────────────────────────────╮\u001b[39m",
+  "  \u001b[38;5;239m│\u001b[38;5;254m \u001b[38;5;251m❯ \u001b[38;5;254m                                                                       \u001b[38;5;239m│\u001b[39m",
+  "  \u001b[38;5;239m╰─────────────────────────────────────── \u001b[38;5;244mGrok 4.5 (high)\u001b[38;5;240m · \u001b[38;5;242malways-approve\u001b[38;5;239m ─╯\u001b[39m",
+  "",
+  "                                             \u001b[1m\u001b[38;5;254mGrok Build  \u001b[22m\u001b[38;5;242m0.2.114 [stable]\u001b[1m\u001b[38;5;254m Beta\u001b[22m\u001b[39m",
+  "\u001b[0m\u001b[20;7H",
 ].join("\r\n");
 
 export const demoPaneById: Record<string, PaneReadResponse> = Object.fromEntries(

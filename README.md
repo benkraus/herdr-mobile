@@ -4,6 +4,8 @@ Herdr Mobile is a native iOS and Android control surface for durable Herdr sessi
 the separately deployed Herdr Mobile Relay, displays live terminal panes, and lets an authorized
 user navigate and operate Herdr from a phone or tablet.
 
+Companion repository: [Herdr Mobile Relay](https://github.com/benkraus/herdr-plugin-mobile-relay).
+
 The application never owns agent processes. Herdr and the relay run on the host; the mobile client
 can disconnect, suspend, or be closed without terminating work.
 
@@ -21,6 +23,12 @@ can disconnect, suspend, or be closed without terminating work.
 - Responsive split layout for tablets and compact navigation for phones.
 - iOS and Android native modules for terminal rendering and platform controls.
 
+## Showcase
+
+| Codex CLI | Grok CLI |
+| --- | --- |
+| [![Codex CLI rendered in Herdr Mobile on a Galaxy TriFold](docs/screenshots/galaxy-trifold/01-codex.png)](docs/screenshots/galaxy-trifold/01-codex.png) | [![Grok CLI rendered in Herdr Mobile on a Galaxy TriFold](docs/screenshots/galaxy-trifold/02-grok.png)](docs/screenshots/galaxy-trifold/02-grok.png) |
+
 ## System architecture
 
 ```text
@@ -35,7 +43,8 @@ Herdr Mobile Relay on the private tailnet
 Herdr server and durable terminal sessions
 ```
 
-The companion relay is published separately as `herdr-plugin-mobile-relay`. Install and configure
+The companion relay is published separately as
+[Herdr Mobile Relay](https://github.com/benkraus/herdr-plugin-mobile-relay). Install and configure
 that repository on the machine running Herdr before connecting this app.
 
 ## Requirements

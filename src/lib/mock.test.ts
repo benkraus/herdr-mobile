@@ -19,6 +19,21 @@ describe("Herdr demo terminal output", () => {
     expect(primaryTabs.map((tab) => agentsByTab.get(tab.tabId))).toEqual(["codex", "grok"]);
   });
 
+  it("replays recognizable captures from the installed Codex and Grok CLIs", () => {
+    const codex = demoPaneById["w1:p1"]?.text ?? "";
+    const grok = demoPaneById["w1:p2"]?.text ?? "";
+
+    expect(codex).toContain("OpenAI Codex");
+    expect(codex).toContain("v0.146.0");
+    expect(codex).toContain("gpt-5.6-terra medium");
+    expect(codex).toContain("Use /skills to list available skills");
+
+    expect(grok).toContain("Grok 4.5 (high)");
+    expect(grok).toContain("always-approve");
+    expect(grok).toContain("Grok Build");
+    expect(grok).toContain("0.2.114 [stable]");
+  });
+
   it("uses fictional non-Herdr project names and paths", () => {
     const projectText = [
       ...demoSnapshot.workspaces.flatMap((workspace) => [
@@ -31,5 +46,15 @@ describe("Herdr demo terminal output", () => {
     ].join("\n");
 
     expect(projectText).not.toMatch(/herdr/i);
+  });
+
+  it("does not expose capture paths, local usernames, or synthetic CLI copy", () => {
+    const terminalText = Object.values(demoPaneById)
+      .map((pane) => pane.text)
+      .join("\n");
+
+    expect(terminalText).not.toMatch(/herdr-cli-capture|\/private\/tmp|\/Users\/benkraus/i);
+    expect(terminalText).not.toContain("I inspected Northstar");
+    expect(terminalText).not.toContain("Analyze the relay boundary");
   });
 });
