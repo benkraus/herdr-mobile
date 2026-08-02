@@ -1,0 +1,12 @@
+diff --git a/src/core/config/config.native.ts b/src/core/config/config.native.ts
+index f15bd8eeae05e7e932445905a838235e05e64ff7..4b0c87f6841aa57c0d1d58ad67b862625b666f93 100644
+--- a/src/core/config/config.native.ts
++++ b/src/core/config/config.native.ts
+@@ -58,6 +58,7 @@ class UniwindConfigBuilder extends UniwindConfigBuilderBase {
+     protected __reinit(generateStyleSheetCallback: GenerateStyleSheetsCallback, themes: Array<string>) {
+         super.__reinit(generateStyleSheetCallback, themes)
+         UniwindStore.reinit(generateStyleSheetCallback, themes)
++        UniwindStore.runtime.currentThemeName = this.currentTheme
+     }
+ 
+     protected onThemeChange() {

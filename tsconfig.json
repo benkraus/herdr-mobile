@@ -1,0 +1,16 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "strict": true
+  },
+  "include": [
+    "app.config.ts",
+    "assets.d.ts",
+    "index.ts",
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "uniwind-types.d.ts"
+  ],
+  "exclude": ["packages"]
+}
