@@ -42,7 +42,14 @@ describe("Herdr navigation model", () => {
       ...demoSnapshot,
       shellPanes: [
         ...demoSnapshot.shellPanes,
-        { ...demoSnapshot.shellPanes[0]!, paneId: "w1:t1:extra", tabId: "w1:t1" },
+        {
+          ...demoSnapshot.agents[0]!,
+          paneId: "w1:t1:extra",
+          tabId: "w1:t1",
+          agent: "shell",
+          kind: "shell" as const,
+          focused: false,
+        },
       ],
     };
     expect(allPanes(snapshot).filter((pane) => pane.tabId === "w1:t1").map((pane) => pane.paneId)).toContain("w1:t1:extra");
@@ -58,6 +65,7 @@ describe("Herdr navigation model", () => {
     };
     expect(sortedAgents(snapshot).map((agent) => agent.status)).toEqual([
       "blocked",
+      "working",
       "working",
       "unknown",
       "idle",
