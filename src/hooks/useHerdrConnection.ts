@@ -20,6 +20,8 @@ import type {
   PaneReadResponse,
   SnapshotResponse,
   TabCreateResponse,
+  UploadImageRequest,
+  UploadImageResponse,
   WorkspaceCreateResponse,
   WorktreeCreateResponse,
 } from "../lib/types";
@@ -356,6 +358,23 @@ export function useHerdrConnection() {
         () => undefined,
       );
       return operation;
+    },
+    [mode, transport],
+  );
+
+  const uploadImage = useCallback(
+    async (paneId: string, image: UploadImageRequest): Promise<UploadImageResponse> => {
+      if (mode === "demo") {
+        const safeName = image.name.replace(/[^A-Za-z0-9._-]/g, "_");
+        return { ok: true, path: `/tmp/herdr-mobile/${safeName}` };
+      }
+      const requestedTransport = transport;
+      if (!requestedTransport) throw new Error("Connect to a Herdr bridge first.");
+      const result = await requestedTransport.uploadImage(paneId, image);
+      if (activeTransport.current !== requestedTransport) {
+        return { ok: false, error: "Image upload cancelled." };
+      }
+      return result;
     },
     [mode, transport],
   );
@@ -847,6 +866,7 @@ export function useHerdrConnection() {
     readPane,
     sendReply,
     sendInput,
+    uploadImage,
     focusPane,
     scrollPane,
     subscribePaneOutput,

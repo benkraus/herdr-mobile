@@ -90,6 +90,18 @@ export interface ReplyRequest {
   requestId: string;
 }
 
+export interface UploadImageRequest {
+  name: string;
+  mimeType: string;
+  dataUrl: string;
+  /** Native picker URI used by the platform's streaming multipart uploader. */
+  uri?: string;
+}
+
+export type UploadImageResponse =
+  | { ok: true; path: string }
+  | { ok: false; error: string };
+
 export interface CreatedPane {
   paneId: string;
   workspaceId: string;

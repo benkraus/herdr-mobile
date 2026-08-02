@@ -9,12 +9,15 @@ import type {
   ReplyRequest,
   SnapshotResponse,
   TabCreateResponse,
+  UploadImageRequest,
+  UploadImageResponse,
   WorkspaceCreateResponse,
   WorktreeCreateResponse,
 } from "./types";
 
 const READ_TIMEOUT_MS = 10_000;
 const WRITE_TIMEOUT_MS = 20_000;
+const UPLOAD_TIMEOUT_MS = 60_000;
 const AGENT_STATUSES = new Set(["idle", "working", "blocked", "done", "unknown"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -131,6 +134,42 @@ function decodeAction(value: unknown): ActionResponse {
   return value as ActionResponse;
 }
 
+function decodeUploadImage(value: unknown): UploadImageResponse {
+  if (!isRecord(value) || typeof value.ok !== "boolean") return invalidResponse();
+  if (value.ok) {
+    if (typeof value.path !== "string") return invalidResponse();
+    return { ok: true, path: value.path };
+  }
+  if (typeof value.error !== "string") return invalidResponse();
+  return { ok: false, error: value.error };
+}
+
+function imageUploadBlob(request: UploadImageRequest): Blob {
+  const prefix = `data:${request.mimeType};base64,`;
+  if (!request.dataUrl.startsWith(prefix)) {
+    throw new Error("Image data does not match its declared media type.");
+  }
+  const encoded = request.dataUrl.slice(prefix.length);
+  const binary = globalThis.atob(encoded);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return new Blob([bytes], { type: request.mimeType });
+}
+
+function appendImageUpload(data: FormData, request: UploadImageRequest): void {
+  if (request.uri?.startsWith("content://")) {
+    data.append("file", {
+      uri: request.uri,
+      name: request.name,
+      type: request.mimeType,
+    } as unknown as Blob);
+    return;
+  }
+  data.append("file", imageUploadBlob(request), request.name);
+}
+
 function isCreatedPane(value: unknown): boolean {
   return isRecord(value) &&
     typeof value.paneId === "string" &&
@@ -180,6 +219,11 @@ export interface HerdrTransport {
   snapshot(signal?: AbortSignal): Promise<SnapshotResponse>;
   pane(paneId: string, signal?: AbortSignal): Promise<PaneReadResponse>;
   reply(paneId: string, request: ReplyRequest, signal?: AbortSignal): Promise<ActionResponse>;
+  uploadImage(
+    paneId: string,
+    request: UploadImageRequest,
+    signal?: AbortSignal,
+  ): Promise<UploadImageResponse>;
   input(paneId: string, data: string, signal?: AbortSignal): Promise<ActionResponse>;
   focusPane(paneId: string, signal?: AbortSignal): Promise<ActionResponse>;
   createTab(request: CreateTabRequest, signal?: AbortSignal): Promise<TabCreateResponse>;
@@ -377,6 +421,49 @@ export class HerdrHttpTransport implements HerdrTransport {
     );
   }
 
+  async uploadImage(
+    paneId: string,
+    request: UploadImageRequest,
+    signal?: AbortSignal,
+  ): Promise<UploadImageResponse> {
+    if (request.uri?.startsWith("file://")) {
+      const url = new URL(
+        this.baseUrl + "/api/pane/" + encodeURIComponent(paneId) + "/upload",
+      );
+      if (this.session) url.searchParams.set("session", this.session);
+      const requestSignal = timedSignal(signal, UPLOAD_TIMEOUT_MS);
+      try {
+        const { File, UploadType } = await import("expo-file-system");
+        const result = await new File(request.uri).upload(url.toString(), {
+          httpMethod: "POST",
+          uploadType: UploadType.MULTIPART,
+          fieldName: "file",
+          mimeType: request.mimeType,
+          headers: { "x-herdr-client": "herdr-mobile-v1" },
+          signal: requestSignal.signal,
+        });
+        if (result.status < 200 || result.status >= 300) {
+          throw new HerdrHttpError(
+            result.status,
+            result.status + " " + result.body,
+            result.body,
+          );
+        }
+        return decodeUploadImage(JSON.parse(result.body));
+      } finally {
+        requestSignal.dispose();
+      }
+    }
+    const data = new FormData();
+    appendImageUpload(data, request);
+    return await this.request(
+      "/api/pane/" + encodeURIComponent(paneId) + "/upload",
+      { method: "POST", body: data, signal },
+      decodeUploadImage,
+      UPLOAD_TIMEOUT_MS,
+    );
+  }
+
   input(paneId: string, data: string, signal?: AbortSignal): Promise<ActionResponse> {
     return this.request(
       "/api/pane/" + encodeURIComponent(paneId) + "/input",
@@ -531,6 +618,7 @@ export class HerdrHttpTransport implements HerdrTransport {
     path: string,
     init: RequestInit,
     decode: (value: unknown) => T,
+    timeoutMs?: number,
   ): Promise<T> {
     const url = new URL(this.baseUrl + path);
     const browserOrigin = globalThis.location?.origin;
@@ -543,7 +631,7 @@ export class HerdrHttpTransport implements HerdrTransport {
     const method = init.method?.toUpperCase() ?? "GET";
     const requestSignal = timedSignal(
       init.signal ?? undefined,
-      method === "GET" ? READ_TIMEOUT_MS : WRITE_TIMEOUT_MS,
+      timeoutMs ?? (method === "GET" ? READ_TIMEOUT_MS : WRITE_TIMEOUT_MS),
     );
     try {
       const response = await fetch(url, {
@@ -551,7 +639,7 @@ export class HerdrHttpTransport implements HerdrTransport {
         signal: requestSignal.signal,
         headers: init.body
           ? {
-              "content-type": "application/json",
+              ...(typeof init.body === "string" ? { "content-type": "application/json" } : {}),
               "x-herdr-client": "herdr-mobile-v1",
               ...init.headers,
             }

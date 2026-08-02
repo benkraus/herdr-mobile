@@ -1,8 +1,30 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildLiveUrl, decodeLiveEvent, HerdrHttpError, HerdrHttpTransport, isUnknownSessionError } from "./transport";
+import {
+  buildLiveUrl,
+  decodeLiveEvent,
+  HerdrHttpError,
+  HerdrHttpTransport,
+  isUnknownSessionError,
+} from "./transport";
+
+const { nativeFileUploadMock } = vi.hoisted(() => ({ nativeFileUploadMock: vi.fn() }));
+
+vi.mock("expo-file-system", () => ({
+  File: class MockFile {
+    readonly uri: string;
+
+    constructor(uri: string) {
+      this.uri = uri;
+    }
+
+    upload = nativeFileUploadMock;
+  },
+  UploadType: { MULTIPART: 1 },
+}));
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  nativeFileUploadMock.mockReset();
 });
 
 describe("HerdrHttpTransport", () => {
@@ -93,6 +115,75 @@ describe("HerdrHttpTransport", () => {
       body: JSON.stringify({ text: "continue", submit: true, requestId: "request-1" }),
       headers: expect.objectContaining({ "x-herdr-client": "herdr-mobile-v1" }),
     });
+  });
+
+  it("uploads image bytes as multipart data without overriding its boundary", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ ok: true, path: "/tmp/herdr-clipboard-images-501/image.png" })),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const transport = new HerdrHttpTransport({
+      baseUrl: "https://buildbox.example.ts.net",
+      session: "work horse",
+    });
+
+    await expect(
+      transport.uploadImage("space:tab/pane", {
+        name: "screen.png",
+        mimeType: "image/png",
+        dataUrl: "data:image/png;base64,aGVsbG8=",
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      path: "/tmp/herdr-clipboard-images-501/image.png",
+    });
+
+    const [url, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
+    expect(String(url)).toBe(
+      "https://buildbox.example.ts.net/api/pane/space%3Atab%2Fpane/upload?session=work+horse",
+    );
+    expect(init.method).toBe("POST");
+    expect(init.headers).toMatchObject({ "x-herdr-client": "herdr-mobile-v1" });
+    expect(init.headers).not.toHaveProperty("content-type");
+    expect(init.body).toBeInstanceOf(FormData);
+    const file = (init.body as FormData).get("file");
+    expect(file).toBeInstanceOf(Blob);
+    expect((file as Blob).type).toBe("image/png");
+    expect(await (file as Blob).text()).toBe("hello");
+  });
+
+  it("streams native picker files through the platform multipart uploader", async () => {
+    nativeFileUploadMock.mockResolvedValue({
+      status: 200,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ok: true, path: "/tmp/uploads/native.png" }),
+    });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const transport = new HerdrHttpTransport({
+      baseUrl: "https://buildbox.example.ts.net",
+      session: "work horse",
+    });
+
+    await expect(transport.uploadImage("space:tab/pane", {
+      name: "screen.png",
+      mimeType: "image/png",
+      dataUrl: "data:image/png;base64,aGVsbG8=",
+      uri: "file:///data/user/0/dev.herdr.mobile/cache/ImagePicker/screen.png",
+    })).resolves.toEqual({ ok: true, path: "/tmp/uploads/native.png" });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(nativeFileUploadMock).toHaveBeenCalledWith(
+      "https://buildbox.example.ts.net/api/pane/space%3Atab%2Fpane/upload?session=work+horse",
+      expect.objectContaining({
+        httpMethod: "POST",
+        uploadType: 1,
+        fieldName: "file",
+        mimeType: "image/png",
+        headers: { "x-herdr-client": "herdr-mobile-v1" },
+        signal: expect.any(AbortSignal),
+      }),
+    );
   });
 
   it("forwards terminal, space, tab, and worktree lifecycle mutations", async () => {

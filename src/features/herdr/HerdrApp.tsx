@@ -21,6 +21,7 @@ import { LoadingStrip } from "../../components/LoadingStrip";
 import { StatusPill } from "../../components/StatusPill";
 import { TerminalSurface } from "../terminal/NativeTerminalSurface";
 import { useHerdrConnection, usePaneOutput } from "../../hooks/useHerdrConnection";
+import { pickComposerImages } from "../../lib/composerImages";
 import {
   allPanes,
   defaultSpace,
@@ -40,6 +41,7 @@ import type {
 } from "../../lib/types";
 import { useThemeColor } from "../../lib/useThemeColor";
 import { uuidv4 } from "../../lib/uuid";
+import { isHerdrUploadMimeType, stageAndPasteHerdrImages } from "./imageAttachments";
 
 const SPLIT_MIN_WIDTH = 760;
 const SIDEBAR_WIDTH = 340;
@@ -881,6 +883,7 @@ export function HerdrApp() {
   const [selectedPaneId, setSelectedPaneId] = useState<string>();
   const [terminalSize, setTerminalSize] = useState<{ cols: number; rows: number } | null>(null);
   const [terminalError, setTerminalError] = useState<string | null>(null);
+  const [imageUploadPaneId, setImageUploadPaneId] = useState<string>();
   const terminalOutputCache = useRef(new Map<string, PaneReadResponse>());
   const [presentedTerminal, setPresentedTerminal] = useState<{
     connectionKey: string;
@@ -1169,6 +1172,52 @@ export function HerdrApp() {
     setRenameTarget(null);
   };
 
+  const attachImages = async () => {
+    if (!selectedPane || !canWrite || imageUploadPaneId) return;
+    const paneId = selectedPane.paneId;
+    setImageUploadPaneId(paneId);
+    setTerminalError(null);
+    try {
+      const selection = await pickComposerImages({ existingCount: 0 });
+      const supported = selection.images.filter((image) =>
+        isHerdrUploadMimeType(image.mimeType),
+      );
+      const unsupportedCount = selection.images.length - supported.length;
+      if (supported.length === 0) {
+        setTerminalError(
+          selection.error ??
+            (unsupportedCount > 0
+              ? "Herdr supports PNG, JPEG, GIF, and WebP image attachments."
+              : null),
+        );
+        return;
+      }
+      const result = await stageAndPasteHerdrImages({
+        images: supported.map((image) => ({
+          name: image.name,
+          mimeType: image.mimeType,
+          dataUrl: image.dataUrl,
+          uri: image.previewUri,
+        })),
+        upload: (image) => herdr.uploadImage(paneId, image),
+        paste: (remotePaths) => herdr.sendInput(paneId, remotePaths),
+      });
+      if (!result.ok) {
+        setTerminalError(result.error);
+        return;
+      }
+      if (selection.error || unsupportedCount > 0) {
+        setTerminalError(
+          selection.error ?? "Some images were skipped. Herdr supports PNG, JPEG, GIF, and WebP.",
+        );
+      }
+    } catch (reason) {
+      setTerminalError(reason instanceof Error ? reason.message : "Image attachment failed.");
+    } finally {
+      setImageUploadPaneId(undefined);
+    }
+  };
+
   const navigator = (
     <Navigator
       snapshot={herdr.snapshot}
@@ -1338,6 +1387,19 @@ export function HerdrApp() {
                   Live terminal · {tabs.find((tab) => tab.tabId === selectedPane.tabId)?.label}
                 </Text>
               </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Attach image to terminal"
+                disabled={!canWrite || Boolean(imageUploadPaneId)}
+                onPress={() => void attachImages()}
+                className="h-10 w-10 items-center justify-center rounded-full bg-subtle active:opacity-60 disabled:opacity-35"
+              >
+                {imageUploadPaneId === selectedPane.paneId ? (
+                  <ActivityIndicator size="small" />
+                ) : (
+                  <SymbolView name="photo" size={17} tintColor={iconColor} type="monochrome" />
+                )}
+              </Pressable>
               <StatusPill {...STATUS_TONES[selectedPane.status]} size="compact" />
             </View>
             {paneState.error ? (
