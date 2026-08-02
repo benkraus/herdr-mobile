@@ -71,6 +71,8 @@ interface NativeComposerEditorProps extends ViewProps {
   readonly onComposerPasteImages?: (event: NativePasteImagesEvent) => void;
   readonly onComposerFocus?: () => void;
   readonly onComposerBlur?: () => void;
+  /** Fired when the platform IME invokes its Send action. */
+  readonly onComposerSubmit?: () => void;
 }
 
 const NativeView = requireNativeView<NativeComposerEditorProps>(NATIVE_MODULE_NAME);
@@ -95,6 +97,7 @@ export function ComposerEditor({
   onPasteImages,
   onFocus,
   onBlur,
+  onSubmit,
   contentInsetVertical = 0,
   ...props
 }: ComposerEditorProps) {
@@ -275,6 +278,7 @@ export function ComposerEditor({
       onComposerPasteImages={(event) => onPasteImages?.(event.nativeEvent.uris)}
       onComposerFocus={onFocus}
       onComposerBlur={onBlur}
+      onComposerSubmit={onSubmit}
     />
   );
 }
