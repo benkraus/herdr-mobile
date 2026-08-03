@@ -251,6 +251,8 @@ describe("HerdrHttpTransport", () => {
       requestId: "space-1",
     });
     await transport.renameTab("w1:t2", "Review");
+    await transport.closeTab("w1:t2", "close-tab-1");
+    await transport.closeWorkspace("w1", "close-space-1");
     await transport.createWorktree({ workspaceId: "w1", branch: "mobile", requestId: "create-1" });
     await transport.removeWorktree("w2", true, "remove-1");
 
@@ -260,6 +262,8 @@ describe("HerdrHttpTransport", () => {
       "https://buildbox.example.ts.net/api/tab",
       "https://buildbox.example.ts.net/api/workspace",
       "https://buildbox.example.ts.net/api/tab/w1%3At2",
+      "https://buildbox.example.ts.net/api/tab/w1%3At2",
+      "https://buildbox.example.ts.net/api/workspace/w1",
       "https://buildbox.example.ts.net/api/worktree",
       "https://buildbox.example.ts.net/api/worktree/w2",
     ]);
@@ -280,7 +284,15 @@ describe("HerdrHttpTransport", () => {
       method: "PATCH",
       body: JSON.stringify({ label: "Review" }),
     });
+    expect(fetchMock.mock.calls[5]?.[1]).toMatchObject({
+      method: "DELETE",
+      body: JSON.stringify({ requestId: "close-tab-1" }),
+    });
     expect(fetchMock.mock.calls[6]?.[1]).toMatchObject({
+      method: "DELETE",
+      body: JSON.stringify({ requestId: "close-space-1" }),
+    });
+    expect(fetchMock.mock.calls[8]?.[1]).toMatchObject({
       method: "DELETE",
       body: JSON.stringify({ force: true, requestId: "remove-1" }),
     });

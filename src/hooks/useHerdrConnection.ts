@@ -814,6 +814,66 @@ export function useHerdrConnection() {
     [mode, refresh, snapshot.workspaces, transport],
   );
 
+  const closeTab = useCallback(
+    async (tabId: string, requestId: string): Promise<ActionResponse> => {
+      if (mode === "demo") {
+        setSnapshot((current) => ({
+          ...current,
+          tabs: current.tabs.filter((tab) => tab.tabId !== tabId),
+          agents: current.agents.filter((pane) => pane.tabId !== tabId),
+          shellPanes: current.shellPanes.filter((pane) => pane.tabId !== tabId),
+          ts: Date.now(),
+        }));
+        return { ok: true };
+      }
+      if (!transport) throw new Error("Connect to a Herdr bridge first.");
+      const result = await transport.closeTab(tabId, requestId);
+      if (result.ok) {
+        setSnapshot((current) => ({
+          ...current,
+          tabs: current.tabs.filter((tab) => tab.tabId !== tabId),
+          agents: current.agents.filter((pane) => pane.tabId !== tabId),
+          shellPanes: current.shellPanes.filter((pane) => pane.tabId !== tabId),
+          ts: Date.now(),
+        }));
+        void refresh();
+      }
+      return result;
+    },
+    [mode, refresh, transport],
+  );
+
+  const closeWorkspace = useCallback(
+    async (workspaceId: string, requestId: string): Promise<ActionResponse> => {
+      if (mode === "demo") {
+        setSnapshot((current) => ({
+          ...current,
+          workspaces: current.workspaces.filter((workspace) => workspace.workspaceId !== workspaceId),
+          tabs: current.tabs.filter((tab) => tab.workspaceId !== workspaceId),
+          agents: current.agents.filter((pane) => pane.workspaceId !== workspaceId),
+          shellPanes: current.shellPanes.filter((pane) => pane.workspaceId !== workspaceId),
+          ts: Date.now(),
+        }));
+        return { ok: true };
+      }
+      if (!transport) throw new Error("Connect to a Herdr bridge first.");
+      const result = await transport.closeWorkspace(workspaceId, requestId);
+      if (result.ok) {
+        setSnapshot((current) => ({
+          ...current,
+          workspaces: current.workspaces.filter((workspace) => workspace.workspaceId !== workspaceId),
+          tabs: current.tabs.filter((tab) => tab.workspaceId !== workspaceId),
+          agents: current.agents.filter((pane) => pane.workspaceId !== workspaceId),
+          shellPanes: current.shellPanes.filter((pane) => pane.workspaceId !== workspaceId),
+          ts: Date.now(),
+        }));
+        void refresh();
+      }
+      return result;
+    },
+    [mode, refresh, transport],
+  );
+
   const removeWorktree = useCallback(
     async (workspaceId: string, force: boolean, requestId: string): Promise<ActionResponse> => {
       if (mode === "demo") {
@@ -876,6 +936,8 @@ export function useHerdrConnection() {
     createWorkspace,
     renameTab,
     createWorktree,
+    closeTab,
+    closeWorkspace,
     removeWorktree,
   };
 }

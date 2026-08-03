@@ -16,6 +16,7 @@ import { AppText as Text, AppTextInput } from "../../components/AppText";
 import { SymbolView } from "../../components/AppSymbol";
 import { ControlPillMenu } from "../../components/ControlPill";
 import { ErrorBanner } from "../../components/ErrorBanner";
+import { showConfirmDialog } from "../../components/ConfirmDialogHost";
 import { GlassSafeAreaView } from "../../components/GlassSafeAreaView";
 import { LoadingStrip } from "../../components/LoadingStrip";
 import { StatusPill } from "../../components/StatusPill";
@@ -117,6 +118,7 @@ function Navigator(props: {
   onCreateTab: (workspace: WorkspaceView) => Promise<void>;
   onCreateWorktree: (workspace: WorkspaceView) => void;
   onRemoveWorktree: (workspace: WorkspaceView) => void;
+  onCloseSpace: (workspace: WorkspaceView) => void;
   onOpenConnection: () => void;
 }) {
   const insets = useSafeAreaInsets();
@@ -160,6 +162,12 @@ function Navigator(props: {
             },
           ]
         : []),
+      {
+        id: "close-space",
+        title: "Close space",
+        image: "xmark",
+        attributes: { disabled: !props.canWrite, destructive: true },
+      },
     ];
     return (
       <View
@@ -194,7 +202,7 @@ function Navigator(props: {
             </View>
             <View className={`h-2 w-2 rounded-full ${statusDotClass(status)}`} />
           </Pressable>
-          {selected ? (
+          {
             <ControlPillMenu
               actions={actions}
               title={workspace.label}
@@ -202,6 +210,7 @@ function Navigator(props: {
                 if (nativeEvent.event === "new-shell-tab") void props.onCreateTab(workspace);
                 else if (nativeEvent.event === "new-worktree") props.onCreateWorktree(workspace);
                 else if (nativeEvent.event === "remove-worktree") props.onRemoveWorktree(workspace);
+                else if (nativeEvent.event === "close-space") props.onCloseSpace(workspace);
               }}
             >
               <Pressable
@@ -216,7 +225,7 @@ function Navigator(props: {
                 )}
               </Pressable>
             </ControlPillMenu>
-          ) : null}
+          }
         </View>
       </View>
     );
@@ -1165,6 +1174,16 @@ export function HerdrApp() {
     setRemoveTarget(null);
   };
 
+  const closeTab = async (tab: TabView) => {
+    const result = await herdr.closeTab(tab.tabId, uuidv4());
+    if (!result.ok) throw new Error(result.error);
+  };
+
+  const closeSpace = async (workspace: WorkspaceView) => {
+    const result = await herdr.closeWorkspace(workspace.workspaceId, uuidv4());
+    if (!result.ok) throw new Error(result.error);
+  };
+
   const renameTab = async (label: string) => {
     if (!renameTarget) return;
     const result = await herdr.renameTab(renameTarget.tabId, label);
@@ -1234,6 +1253,17 @@ export function HerdrApp() {
       onCreateTab={createShellTab}
       onCreateWorktree={setCreateTarget}
       onRemoveWorktree={setRemoveTarget}
+      onCloseSpace={(workspace) =>
+        showConfirmDialog({
+          title: "Close space?",
+          message: `Close ${workspace.label} and stop all of its tabs and agents?`,
+          confirmText: "Close space",
+          destructive: true,
+          onConfirm: () => void closeSpace(workspace).catch((error: unknown) =>
+            setTerminalError(error instanceof Error ? error.message : "Space could not be closed."),
+          ),
+        })
+      }
       onOpenConnection={openConnection}
     />
   );
@@ -1312,7 +1342,7 @@ export function HerdrApp() {
                       {tab.label}
                     </Text>
                   </Pressable>
-                  {active ? (
+                  {
                     <ControlPillMenu
                       actions={[
                         {
@@ -1321,10 +1351,32 @@ export function HerdrApp() {
                           image: "square.and.pencil",
                           attributes: { disabled: !canWrite },
                         },
+                        {
+                          id: "close-tab",
+                          title: "Close tab",
+                          image: "xmark",
+                          attributes: { disabled: !canWrite, destructive: true },
+                        },
                       ]}
                       title={tab.label}
                       onPressAction={({ nativeEvent }) => {
                         if (nativeEvent.event === "rename-tab") setRenameTarget(tab);
+                        else if (nativeEvent.event === "close-tab") {
+                          showConfirmDialog({
+                            title: "Close tab?",
+                            message: `Close ${tab.label} and stop everything in it?`,
+                            confirmText: "Close tab",
+                            destructive: true,
+                            onConfirm: () =>
+                              void closeTab(tab).catch((error: unknown) =>
+                                setTerminalError(
+                                  error instanceof Error
+                                    ? error.message
+                                    : "Tab could not be closed.",
+                                ),
+                              ),
+                          });
+                        }
                       }}
                     >
                       <Pressable
@@ -1340,7 +1392,7 @@ export function HerdrApp() {
                         />
                       </Pressable>
                     </ControlPillMenu>
-                  ) : null}
+                  }
                 </View>
               );
             })}

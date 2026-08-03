@@ -232,6 +232,12 @@ export interface HerdrTransport {
     signal?: AbortSignal,
   ): Promise<WorkspaceCreateResponse>;
   renameTab(tabId: string, label: string, signal?: AbortSignal): Promise<ActionResponse>;
+  closeTab(tabId: string, requestId: string, signal?: AbortSignal): Promise<ActionResponse>;
+  closeWorkspace(
+    workspaceId: string,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<ActionResponse>;
   createWorktree(request: CreateWorktreeRequest, signal?: AbortSignal): Promise<WorktreeCreateResponse>;
   removeWorktree(workspaceId: string, force: boolean, requestId: string, signal?: AbortSignal): Promise<ActionResponse>;
 }
@@ -503,6 +509,26 @@ export class HerdrHttpTransport implements HerdrTransport {
     return this.request(
       "/api/tab/" + encodeURIComponent(tabId),
       { method: "PATCH", body: JSON.stringify({ label }), signal },
+      decodeAction,
+    );
+  }
+
+  closeTab(tabId: string, requestId: string, signal?: AbortSignal): Promise<ActionResponse> {
+    return this.request(
+      "/api/tab/" + encodeURIComponent(tabId),
+      { method: "DELETE", body: JSON.stringify({ requestId }), signal },
+      decodeAction,
+    );
+  }
+
+  closeWorkspace(
+    workspaceId: string,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<ActionResponse> {
+    return this.request(
+      "/api/workspace/" + encodeURIComponent(workspaceId),
+      { method: "DELETE", body: JSON.stringify({ requestId }), signal },
       decodeAction,
     );
   }

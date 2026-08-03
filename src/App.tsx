@@ -9,6 +9,7 @@ import {
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { OverlayPortalHost } from "./components/OverlayPortal";
+import { ConfirmDialogHost } from "./components/ConfirmDialogHost";
 import { HerdrApp } from "./features/herdr/HerdrApp";
 import { useThemeColor } from "./lib/useThemeColor";
 
@@ -43,6 +44,7 @@ export default function App() {
           <KeyboardAvoidingView automaticOffset behavior="padding" className="flex-1">
             <HerdrApp />
           </KeyboardAvoidingView>
+          <ConfirmDialogHost />
           <OverlayPortalHost />
         </SafeAreaProvider>
       </KeyboardProvider>
