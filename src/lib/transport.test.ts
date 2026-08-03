@@ -23,6 +23,7 @@ vi.mock("expo-file-system", () => ({
 }));
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   nativeFileUploadMock.mockReset();
 });
@@ -32,9 +33,7 @@ describe("HerdrHttpTransport", () => {
     expect(buildLiveUrl("https://buildbox.example.ts.net", "work horse")).toBe(
       "wss://buildbox.example.ts.net/api/live?session=work+horse",
     );
-    expect(buildLiveUrl("http://127.0.0.1:8787", undefined)).toBe(
-      "ws://127.0.0.1:8787/api/live",
-    );
+    expect(buildLiveUrl("http://127.0.0.1:8787", undefined)).toBe("ws://127.0.0.1:8787/api/live");
   });
 
   it("validates live snapshot, pane revision, status, and consecutive ANSI frame events", () => {
@@ -42,18 +41,24 @@ describe("HerdrHttpTransport", () => {
     expect(
       decodeLiveEvent('{"type":"pane_output_changed","paneId":"w1:p1","revision":42}'),
     ).toEqual({ type: "pane_output_changed", paneId: "w1:p1", revision: 42 });
-    expect(
-      decodeLiveEvent('{"type":"pane_stream_status","paneId":"w1:p1","live":true}'),
-    ).toEqual({ type: "pane_stream_status", paneId: "w1:p1", live: true });
-    expect(decodeLiveEvent(JSON.stringify({
-      type: "pane_frame",
+    expect(decodeLiveEvent('{"type":"pane_stream_status","paneId":"w1:p1","live":true}')).toEqual({
+      type: "pane_stream_status",
       paneId: "w1:p1",
-      seq: 1,
-      full: true,
-      width: 80,
-      height: 24,
-      bytes: "G1sySkrDqg==",
-    }))).toEqual({
+      live: true,
+    });
+    expect(
+      decodeLiveEvent(
+        JSON.stringify({
+          type: "pane_frame",
+          paneId: "w1:p1",
+          seq: 1,
+          full: true,
+          width: 80,
+          height: 24,
+          bytes: "G1sySkrDqg==",
+        }),
+      ),
+    ).toEqual({
       type: "pane_frame",
       paneId: "w1:p1",
       seq: 1,
@@ -63,25 +68,38 @@ describe("HerdrHttpTransport", () => {
       text: "\u001b[2JJê",
     });
     expect(decodeLiveEvent('{"type":"pane_output_changed","paneId":3}')).toBeNull();
-    expect(decodeLiveEvent(JSON.stringify({
-      type: "pane_frame",
-      paneId: "w1:p1",
-      seq: 2,
-      full: false,
-      width: 80,
-      height: 24,
-      bytes: "not base64!",
-    }))).toBeNull();
+    expect(
+      decodeLiveEvent(
+        JSON.stringify({
+          type: "pane_frame",
+          paneId: "w1:p1",
+          seq: 2,
+          full: false,
+          width: 80,
+          height: 24,
+          bytes: "not base64!",
+        }),
+      ),
+    ).toBeNull();
   });
 
   it("scopes snapshot and pane reads to the configured Herdr session", async () => {
     const fetchMock = vi.fn().mockImplementation((input: URL) =>
       Promise.resolve(
-        new Response(JSON.stringify(
-          String(input).includes("/api/pane/")
-            ? { paneId: "space:tab/pane", text: "", truncated: false, revision: 1 }
-            : { bridge: "connected", agents: [], shellPanes: [], workspaces: [], tabs: [], ts: 1 },
-        )),
+        new Response(
+          JSON.stringify(
+            String(input).includes("/api/pane/")
+              ? { paneId: "space:tab/pane", text: "", truncated: false, revision: 1 }
+              : {
+                  bridge: "connected",
+                  agents: [],
+                  shellPanes: [],
+                  workspaces: [],
+                  tabs: [],
+                  ts: 1,
+                },
+          ),
+        ),
       ),
     );
     vi.stubGlobal("fetch", fetchMock);
@@ -106,10 +124,12 @@ describe("HerdrHttpTransport", () => {
     vi.stubGlobal("fetch", fetchMock);
     const transport = new HerdrHttpTransport({ baseUrl: "https://buildbox.example.ts.net" });
 
-    await expect(transport.reply("pane-1", {
-      text: "continue",
-      requestId: "request-1",
-    })).resolves.toEqual({ ok: true });
+    await expect(
+      transport.reply("pane-1", {
+        text: "continue",
+        requestId: "request-1",
+      }),
+    ).resolves.toEqual({ ok: true });
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
       method: "POST",
       body: JSON.stringify({ text: "continue", submit: true, requestId: "request-1" }),
@@ -118,9 +138,13 @@ describe("HerdrHttpTransport", () => {
   });
 
   it("uploads image bytes as multipart data without overriding its boundary", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ ok: true, path: "/tmp/herdr-clipboard-images-501/image.png" })),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ ok: true, path: "/tmp/herdr-clipboard-images-501/image.png" }),
+        ),
+      );
     vi.stubGlobal("fetch", fetchMock);
     const transport = new HerdrHttpTransport({
       baseUrl: "https://buildbox.example.ts.net",
@@ -165,12 +189,14 @@ describe("HerdrHttpTransport", () => {
       session: "work horse",
     });
 
-    await expect(transport.uploadImage("space:tab/pane", {
-      name: "screen.png",
-      mimeType: "image/png",
-      dataUrl: "data:image/png;base64,aGVsbG8=",
-      uri: "file:///data/user/0/dev.herdr.mobile/cache/ImagePicker/screen.png",
-    })).resolves.toEqual({ ok: true, path: "/tmp/uploads/native.png" });
+    await expect(
+      transport.uploadImage("space:tab/pane", {
+        name: "screen.png",
+        mimeType: "image/png",
+        dataUrl: "data:image/png;base64,aGVsbG8=",
+        uri: "file:///data/user/0/dev.herdr.mobile/cache/ImagePicker/screen.png",
+      }),
+    ).resolves.toEqual({ ok: true, path: "/tmp/uploads/native.png" });
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(nativeFileUploadMock).toHaveBeenCalledWith(
@@ -215,8 +241,21 @@ describe("HerdrHttpTransport", () => {
           isLinkedWorktree: true,
         },
       },
-      tab: { tabId: "w2:t1", workspaceId: "w2", number: 1, label: "shell", focused: true, paneCount: 1 },
-      pane: { paneId: "w2:p1", workspaceId: "w2", workspaceLabel: "mobile", tabId: "w2:t1", cwd: "/worktrees/mobile" },
+      tab: {
+        tabId: "w2:t1",
+        workspaceId: "w2",
+        number: 1,
+        label: "shell",
+        focused: true,
+        paneCount: 1,
+      },
+      pane: {
+        paneId: "w2:p1",
+        workspaceId: "w2",
+        workspaceLabel: "mobile",
+        tabId: "w2:t1",
+        cwd: "/worktrees/mobile",
+      },
     };
     const createdWorkspace = {
       ok: true,
@@ -234,9 +273,9 @@ describe("HerdrHttpTransport", () => {
         ? worktree
         : url.endsWith("/api/workspace")
           ? createdWorkspace
-        : url.endsWith("/api/tab")
-          ? createdTab
-          : { ok: true };
+          : url.endsWith("/api/tab")
+            ? createdTab
+            : { ok: true };
       return Promise.resolve(new Response(JSON.stringify(value)));
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -304,42 +343,150 @@ describe("HerdrHttpTransport", () => {
   });
 
   it("accepts workspace worktree identity in snapshots", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      bridge: "connected",
-      agents: [],
-      shellPanes: [],
-      workspaces: [{
-        workspaceId: "w1",
-        number: 1,
-        label: "repo",
-        focused: true,
-        activeTabId: "w1:t1",
-        tabCount: 1,
-        paneCount: 1,
-        worktree: {
-          repoKey: "/repo/.git",
-          repoName: "repo",
-          repoRoot: "/repo",
-          checkoutPath: "/repo",
-          isLinkedWorktree: false,
-        },
-      }],
-      tabs: [],
-      ts: 1,
-    }))));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            bridge: "connected",
+            agents: [],
+            shellPanes: [],
+            workspaces: [
+              {
+                workspaceId: "w1",
+                number: 1,
+                label: "repo",
+                focused: true,
+                activeTabId: "w1:t1",
+                tabCount: 1,
+                paneCount: 1,
+                worktree: {
+                  repoKey: "/repo/.git",
+                  repoName: "repo",
+                  repoRoot: "/repo",
+                  checkoutPath: "/repo",
+                  isLinkedWorktree: false,
+                },
+              },
+            ],
+            tabs: [],
+            ts: 1,
+          }),
+        ),
+      ),
+    );
     const transport = new HerdrHttpTransport({ baseUrl: "https://buildbox.example.ts.net" });
     await expect(transport.snapshot()).resolves.toMatchObject({
       workspaces: [{ worktree: { repoKey: "/repo/.git", isLinkedWorktree: false } }],
     });
   });
 
+  it("reads workspace files and Git state through session-scoped endpoints", async () => {
+    const fetchMock = vi.fn().mockImplementation((input: URL) => {
+      const url = String(input);
+      const payload = url.includes("/files")
+        ? {
+            workspaceId: "w1",
+            root: "/repo",
+            entries: [{ path: "src/app.ts", kind: "file" }],
+            truncated: false,
+          }
+        : url.includes("/file?")
+          ? {
+              workspaceId: "w1",
+              path: "src/app.ts",
+              mediaType: "text/typescript",
+              encoding: "utf8",
+              content: "export {};\n",
+              size: 11,
+            }
+          : url.includes("/diff?")
+            ? { workspaceId: "w1", path: "src/app.ts", patch: "+export {};", truncated: false }
+            : {
+                workspaceId: "w1",
+                isRepo: true,
+                branch: "main",
+                upstream: "origin/main",
+                ahead: 1,
+                behind: 0,
+                insertions: 1,
+                deletions: 0,
+                files: [
+                  {
+                    path: "src/app.ts",
+                    status: "Modified",
+                    indexStatus: " ",
+                    worktreeStatus: "M",
+                    insertions: 1,
+                    deletions: 0,
+                  },
+                ],
+              };
+      return Promise.resolve(new Response(JSON.stringify(payload)));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const transport = new HerdrHttpTransport({
+      baseUrl: "https://buildbox.example.ts.net",
+      session: "primary work",
+    });
+
+    const inspection = { paneId: "pane one" };
+    await expect(transport.workspaceFiles("w1", inspection)).resolves.toMatchObject({
+      truncated: false,
+    });
+    await expect(transport.workspaceFile("w1", "src/app.ts", inspection)).resolves.toMatchObject({
+      encoding: "utf8",
+    });
+    await expect(transport.workspaceGit("w1", inspection)).resolves.toMatchObject({
+      branch: "main",
+      ahead: 1,
+    });
+    await expect(transport.workspaceDiff("w1", "src/app.ts", inspection)).resolves.toMatchObject({
+      patch: "+export {};",
+    });
+
+    expect(fetchMock.mock.calls.map((call) => String(call[0]))).toEqual([
+      "https://buildbox.example.ts.net/api/workspace/w1/files?paneId=pane+one&session=primary+work",
+      "https://buildbox.example.ts.net/api/workspace/w1/file?path=src%2Fapp.ts&paneId=pane+one&session=primary+work",
+      "https://buildbox.example.ts.net/api/workspace/w1/git?paneId=pane+one&session=primary+work",
+      "https://buildbox.example.ts.net/api/workspace/w1/diff?path=src%2Fapp.ts&paneId=pane+one&session=primary+work",
+    ]);
+  });
+
   it("surfaces bridge response details", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("device is read-only", { status: 403 })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("device is read-only", { status: 403 })),
+    );
     const transport = new HerdrHttpTransport({ baseUrl: "https://buildbox.example.ts.net" });
-    await expect(transport.reply("pane-1", { text: "continue", requestId: "request-2" })).rejects.toThrow("403 device is read-only");
-    await transport.reply("pane-1", { text: "continue", requestId: "request-2" }).catch((error: unknown) => {
-      expect(error).toBeInstanceOf(HerdrHttpError);
-      expect((error as HerdrHttpError).status).toBe(403);
+    await expect(
+      transport.reply("pane-1", { text: "continue", requestId: "request-2" }),
+    ).rejects.toThrow("device is read-only");
+    await transport
+      .reply("pane-1", { text: "continue", requestId: "request-2" })
+      .catch((error: unknown) => {
+        expect(error).toBeInstanceOf(HerdrHttpError);
+        expect((error as HerdrHttpError).status).toBe(403);
+      });
+  });
+
+  it("surfaces JSON bridge errors as readable messages", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: "Workspace inspection is unavailable because this space spans multiple Git repositories.",
+          }),
+          { status: 422 },
+        ),
+      ),
+    );
+    const transport = new HerdrHttpTransport({ baseUrl: "https://buildbox.example.ts.net" });
+
+    await expect(transport.workspaceFiles("w1")).rejects.toMatchObject({
+      message:
+        "Workspace inspection is unavailable because this space spans multiple Git repositories.",
     });
   });
 
@@ -355,28 +502,80 @@ describe("HerdrHttpTransport", () => {
       ),
     ).toBe(true);
     expect(
-      isUnknownSessionError(
-        new HerdrHttpError(404, "404 not found", "not found"),
-        "work",
-      ),
+      isUnknownSessionError(new HerdrHttpError(404, "404 not found", "not found"), "work"),
     ).toBe(false);
   });
 
   it("forwards reply cancellation to the request", async () => {
-    const fetchMock = vi.fn().mockImplementation((_url: URL, init: RequestInit) =>
-      new Promise((_resolve, reject) => {
-        init.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
-      }),
+    const fetchMock = vi.fn().mockImplementation(
+      (_url: URL, init: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+        }),
     );
     vi.stubGlobal("fetch", fetchMock);
     const transport = new HerdrHttpTransport({ baseUrl: "https://buildbox.example.ts.net" });
     const controller = new AbortController();
-    const reply = transport.reply("pane-1", { text: "continue", requestId: "request-3" }, controller.signal);
+    const reply = transport.reply(
+      "pane-1",
+      { text: "continue", requestId: "request-3" },
+      controller.signal,
+    );
 
     controller.abort();
 
     await expect(reply).rejects.toBeDefined();
     expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("keeps workspace diff requests alive through the relay's full Git pipeline", async () => {
+    vi.useFakeTimers();
+    let requestSignal: AbortSignal | undefined;
+    const fetchMock = vi.fn().mockImplementation(
+      (_url: URL, init: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          requestSignal = init.signal as AbortSignal;
+          requestSignal.addEventListener("abort", () => reject(requestSignal?.reason), {
+            once: true,
+          });
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const transport = new HerdrHttpTransport({ baseUrl: "https://buildbox.example.ts.net" });
+    const request = transport.workspaceDiff("w1", "src/app.ts");
+    const handledRequest = request.catch(() => undefined);
+
+    await vi.advanceTimersByTimeAsync(84_001);
+    expect(requestSignal?.aborted).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(5_999);
+    expect(requestSignal?.aborted).toBe(true);
+    await handledRequest;
+  });
+
+  it("keeps workspace Git status alive through the relay's full status pipeline", async () => {
+    vi.useFakeTimers();
+    let requestSignal: AbortSignal | undefined;
+    const fetchMock = vi.fn().mockImplementation(
+      (_url: URL, init: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          requestSignal = init.signal as AbortSignal;
+          requestSignal.addEventListener("abort", () => reject(requestSignal?.reason), {
+            once: true,
+          });
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const transport = new HerdrHttpTransport({ baseUrl: "https://buildbox.example.ts.net" });
+    const request = transport.workspaceGit("w1");
+    const handledRequest = request.catch(() => undefined);
+
+    await vi.advanceTimersByTimeAsync(60_001);
+    expect(requestSignal?.aborted).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(requestSignal?.aborted).toBe(true);
+    await handledRequest;
   });
 
   it("fails clearly instead of attempting an unsupported cross-origin web connection", async () => {
@@ -390,11 +589,16 @@ describe("HerdrHttpTransport", () => {
   });
 
   it("rejects malformed successful bridge responses before they reach app state", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockImplementation(() => Promise.resolve(new Response("{}"))));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(() => Promise.resolve(new Response("{}"))),
+    );
     const transport = new HerdrHttpTransport({ baseUrl: "https://buildbox.example.ts.net" });
 
     await expect(transport.snapshot()).rejects.toThrow(/incompatible response/);
     await expect(transport.pane("pane-1")).rejects.toThrow(/incompatible response/);
-    await expect(transport.reply("pane-1", { text: "continue", requestId: "request-4" })).rejects.toThrow(/incompatible response/);
+    await expect(
+      transport.reply("pane-1", { text: "continue", requestId: "request-4" }),
+    ).rejects.toThrow(/incompatible response/);
   });
 });

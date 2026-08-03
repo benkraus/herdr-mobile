@@ -14,6 +14,8 @@ can disconnect, suspend, or be closed without terminating work.
 - Spaces and linked worktrees grouped in a native navigator.
 - Agent-focused view sorted by attention state.
 - Live ANSI terminal rendering and interactive terminal input.
+- Workspace file browser with bounded text and image previews.
+- Read-only Git branch, ahead/behind, changed-file, and unified-diff inspection.
 - Device-sized terminal takeover, resize, and scroll commands.
 - Space, worktree, and shell-tab creation.
 - Tab renaming and worktree removal.
@@ -25,8 +27,8 @@ can disconnect, suspend, or be closed without terminating work.
 
 ## Showcase
 
-| Codex CLI | Grok CLI |
-| --- | --- |
+| Codex CLI                                                                                                                                               | Grok CLI                                                                                                                                             |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [![Codex CLI rendered in Herdr Mobile on a Galaxy TriFold](docs/screenshots/galaxy-trifold/01-codex.png)](docs/screenshots/galaxy-trifold/01-codex.png) | [![Grok CLI rendered in Herdr Mobile on a Galaxy TriFold](docs/screenshots/galaxy-trifold/02-grok.png)](docs/screenshots/galaxy-trifold/02-grok.png) |
 
 ## System architecture
@@ -96,6 +98,9 @@ EXPO_PUBLIC_HERDR_DEMO=0
 The URL is only a default. Users can enter or replace it from the connection sheet, and the app
 stores the resulting connection in platform secure storage. A named Herdr session may also be
 selected.
+
+The workspace browser requires a current Herdr Mobile Relay build. File and Git reads are resolved
+from the selected Herdr workspace on the host; the mobile client never supplies an arbitrary root.
 
 Remote relay URLs must use HTTPS. Plain HTTP is accepted only for loopback development.
 

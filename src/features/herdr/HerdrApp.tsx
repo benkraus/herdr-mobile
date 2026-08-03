@@ -43,6 +43,7 @@ import type {
 import { useThemeColor } from "../../lib/useThemeColor";
 import { uuidv4 } from "../../lib/uuid";
 import { isHerdrUploadMimeType, stageAndPasteHerdrImages } from "./imageAttachments";
+import { WorkspaceBrowserSheet } from "./WorkspaceBrowserSheet";
 
 const SPLIT_MIN_WIDTH = 760;
 const SIDEBAR_WIDTH = 340;
@@ -202,7 +203,7 @@ function Navigator(props: {
             </View>
             <View className={`h-2 w-2 rounded-full ${statusDotClass(status)}`} />
           </Pressable>
-          {
+          {selected ? (
             <ControlPillMenu
               actions={actions}
               title={workspace.label}
@@ -225,7 +226,7 @@ function Navigator(props: {
                 )}
               </Pressable>
             </ControlPillMenu>
-          }
+          ) : null}
         </View>
       </View>
     );
@@ -883,6 +884,7 @@ export function HerdrApp() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [connectionOpen, setConnectionOpen] = useState(false);
   const [spaceCreateOpen, setSpaceCreateOpen] = useState(false);
+  const [workspaceBrowserOpen, setWorkspaceBrowserOpen] = useState(false);
   const [createTarget, setCreateTarget] = useState<WorkspaceView | null>(null);
   const [removeTarget, setRemoveTarget] = useState<WorkspaceView | null>(null);
   const [renameTarget, setRenameTarget] = useState<TabView | null>(null);
@@ -1198,9 +1200,7 @@ export function HerdrApp() {
     setTerminalError(null);
     try {
       const selection = await pickComposerImages({ existingCount: 0 });
-      const supported = selection.images.filter((image) =>
-        isHerdrUploadMimeType(image.mimeType),
-      );
+      const supported = selection.images.filter((image) => isHerdrUploadMimeType(image.mimeType));
       const unsupportedCount = selection.images.length - supported.length;
       if (supported.length === 0) {
         setTerminalError(
@@ -1259,9 +1259,12 @@ export function HerdrApp() {
           message: `Close ${workspace.label} and stop all of its tabs and agents?`,
           confirmText: "Close space",
           destructive: true,
-          onConfirm: () => void closeSpace(workspace).catch((error: unknown) =>
-            setTerminalError(error instanceof Error ? error.message : "Space could not be closed."),
-          ),
+          onConfirm: () =>
+            void closeSpace(workspace).catch((error: unknown) =>
+              setTerminalError(
+                error instanceof Error ? error.message : "Space could not be closed.",
+              ),
+            ),
         })
       }
       onOpenConnection={openConnection}
@@ -1300,19 +1303,32 @@ export function HerdrApp() {
             </View>
           }
           rightSlot={
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Refresh Herdr"
-              onPress={() => void herdr.refresh()}
-              className="h-10 w-10 items-center justify-center rounded-full bg-subtle"
-            >
-              <SymbolView
-                name="arrow.clockwise"
-                size={17}
-                tintColor={iconColor}
-                type="monochrome"
-              />
-            </Pressable>
+            <View className="flex-row items-center gap-2">
+              {selectedSpace && selectedPane ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Open workspace browser"
+                  disabled={herdr.mode !== "live" && herdr.mode !== "demo"}
+                  onPress={() => setWorkspaceBrowserOpen(true)}
+                  className="h-10 w-10 items-center justify-center rounded-full bg-subtle active:opacity-65 disabled:opacity-35"
+                >
+                  <SymbolView name="folder" size={17} tintColor={iconColor} type="monochrome" />
+                </Pressable>
+              ) : null}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Refresh Herdr"
+                onPress={() => void herdr.refresh()}
+                className="h-10 w-10 items-center justify-center rounded-full bg-subtle"
+              >
+                <SymbolView
+                  name="arrow.clockwise"
+                  size={17}
+                  tintColor={iconColor}
+                  type="monochrome"
+                />
+              </Pressable>
+            </View>
           }
         />
 
@@ -1342,7 +1358,7 @@ export function HerdrApp() {
                       {tab.label}
                     </Text>
                   </Pressable>
-                  {
+                  {active ? (
                     <ControlPillMenu
                       actions={[
                         {
@@ -1392,7 +1408,7 @@ export function HerdrApp() {
                         />
                       </Pressable>
                     </ControlPillMenu>
-                  }
+                  ) : null}
                 </View>
               );
             })}
@@ -1557,6 +1573,16 @@ export function HerdrApp() {
         tab={renameTarget}
         onClose={() => setRenameTarget(null)}
         onRename={renameTab}
+      />
+      <WorkspaceBrowserSheet
+        visible={workspaceBrowserOpen}
+        workspace={selectedSpace}
+        pane={selectedPane}
+        onClose={() => setWorkspaceBrowserOpen(false)}
+        listFiles={herdr.listWorkspaceFiles}
+        readFile={herdr.readWorkspaceFile}
+        readGit={herdr.readWorkspaceGitStatus}
+        readDiff={herdr.readWorkspaceGitDiff}
       />
     </View>
   );

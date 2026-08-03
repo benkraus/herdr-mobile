@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { demoPaneById, demoSnapshot } from "../lib/mock";
+import {
+  demoPaneById,
+  demoSnapshot,
+  demoWorkspaceDiff,
+  demoWorkspaceFile,
+  demoWorkspaceFiles,
+  demoWorkspaceGit,
+} from "../lib/mock";
 import { normalizeBaseUrl } from "../lib/model";
 import { parseConnection } from "../lib/connectionConfig";
 import { loadConnection, saveConnection } from "../lib/storage";
@@ -22,6 +29,10 @@ import type {
   TabCreateResponse,
   UploadImageRequest,
   UploadImageResponse,
+  WorkspaceFileResponse,
+  WorkspaceFilesResponse,
+  WorkspaceGitDiffResponse,
+  WorkspaceGitStatusResponse,
   WorkspaceCreateResponse,
   WorktreeCreateResponse,
 } from "../lib/types";
@@ -51,7 +62,9 @@ export function useHerdrConnection() {
   const [config, setConfig] = useState<ConnectionConfig | null>(null);
   const [demoEnabled, setDemoEnabled] = useState(envDemo);
   const [mode, setMode] = useState<ConnectionMode>(envDemo ? "demo" : "connecting");
-  const [snapshot, setSnapshot] = useState<SnapshotResponse>(envDemo ? demoSnapshot : emptySnapshot);
+  const [snapshot, setSnapshot] = useState<SnapshotResponse>(
+    envDemo ? demoSnapshot : emptySnapshot,
+  );
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(envDemo);
   const hasConnected = useRef(false);
@@ -68,6 +81,8 @@ export function useHerdrConnection() {
   const [liveSourceConnected, setLiveSourceConnected] = useState(false);
   const [paneStreamConnected, setPaneStreamConnected] = useState(false);
   const liveSubscription = useRef<HerdrLiveSubscription | null>(null);
+  const snapshotRef = useRef(snapshot);
+  snapshotRef.current = snapshot;
 
   const transport = useMemo(
     () => (!demoEnabled && config?.baseUrl ? new HerdrHttpTransport(config) : null),
@@ -95,7 +110,8 @@ export function useHerdrConnection() {
       try {
         const saved = await loadConnection();
         if (!mounted || generation !== configGeneration.current) return;
-        const initial = saved ?? (envUrl ? parseConnection(JSON.stringify({ baseUrl: envUrl })) : null);
+        const initial =
+          saved ?? (envUrl ? parseConnection(JSON.stringify({ baseUrl: envUrl })) : null);
         setConfig(initial);
         setMode(initial ? "connecting" : "unconfigured");
       } catch {
@@ -139,7 +155,8 @@ export function useHerdrConnection() {
         generation !== refreshGeneration.current ||
         configVersion !== configGeneration.current ||
         activeTransport.current !== requestedTransport
-      ) return;
+      )
+        return;
       setSnapshot(next);
       if (next.bridge === "connected") {
         setMode("live");
@@ -154,7 +171,8 @@ export function useHerdrConnection() {
         controller.signal.aborted ||
         generation !== refreshGeneration.current ||
         configVersion !== configGeneration.current
-      ) return;
+      )
+        return;
       if (config?.session && isUnknownSessionError(reason, config.session)) {
         const primary = { baseUrl: config.baseUrl };
         const configOperation = ++configGeneration.current;
@@ -164,7 +182,8 @@ export function useHerdrConnection() {
           generation !== refreshGeneration.current ||
           activeTransport.current !== requestedTransport ||
           configOperation !== configGeneration.current
-        ) return;
+        )
+          return;
         invalidateRefresh();
         setConfig(primary);
         setSnapshot(emptySnapshot);
@@ -239,27 +258,30 @@ export function useHerdrConnection() {
     return () => clearInterval(timer);
   }, [liveSourceConnected, mode, ready, refresh, transport]);
 
-  const connect = useCallback(async (next: ConnectionConfig) => {
-    const normalized = { ...next, baseUrl: normalizeBaseUrl(next.baseUrl) };
-    if (!normalized.baseUrl) throw new Error("Enter the Herdr bridge URL.");
-    const configOperation = ++configGeneration.current;
-    const previousTransport = activeTransport.current;
-    invalidateRefresh();
-    try {
-      await persistConfig(normalized, configOperation);
-    } catch (reason) {
-      if (configOperation === configGeneration.current) {
-        activeTransport.current = previousTransport;
+  const connect = useCallback(
+    async (next: ConnectionConfig) => {
+      const normalized = { ...next, baseUrl: normalizeBaseUrl(next.baseUrl) };
+      if (!normalized.baseUrl) throw new Error("Enter the Herdr bridge URL.");
+      const configOperation = ++configGeneration.current;
+      const previousTransport = activeTransport.current;
+      invalidateRefresh();
+      try {
+        await persistConfig(normalized, configOperation);
+      } catch (reason) {
+        if (configOperation === configGeneration.current) {
+          activeTransport.current = previousTransport;
+        }
+        throw reason;
       }
-      throw reason;
-    }
-    if (configOperation !== configGeneration.current) return;
-    setDemoEnabled(false);
-    setConfig(normalized);
-    setSnapshot(emptySnapshot);
-    setError(null);
-    setMode("connecting");
-  }, [invalidateRefresh, persistConfig]);
+      if (configOperation !== configGeneration.current) return;
+      setDemoEnabled(false);
+      setConfig(normalized);
+      setSnapshot(emptySnapshot);
+      setError(null);
+      setMode("connecting");
+    },
+    [invalidateRefresh, persistConfig],
+  );
 
   const useDemo = useCallback(async () => {
     configGeneration.current += 1;
@@ -291,7 +313,11 @@ export function useHerdrConnection() {
         demoOutputs.current[paneId] = {
           ...current,
           revision: current.revision + 1,
-          text: current.text + "\n\n› " + text + "\n\nWorking on that now. The Herdr pane remains durable while this app is away.",
+          text:
+            current.text +
+            "\n\n› " +
+            text +
+            "\n\nWorking on that now. The Herdr pane remains durable while this app is away.",
         };
         return { ok: true as const };
       }
@@ -327,6 +353,114 @@ export function useHerdrConnection() {
       } finally {
         if (writeInFlight.current === controller) writeInFlight.current = null;
       }
+    },
+    [mode, transport],
+  );
+
+  const listWorkspaceFiles = useCallback(
+    async (
+      workspaceId: string,
+      paneId: string,
+      signal?: AbortSignal,
+    ): Promise<WorkspaceFilesResponse> => {
+      if (mode === "demo") {
+        const currentSnapshot = snapshotRef.current;
+        const workspace = currentSnapshot.workspaces.find(
+          (candidate) => candidate.workspaceId === workspaceId,
+        );
+        if (!workspace) throw new Error("Demo workspace not found.");
+        const template = demoWorkspaceFiles[workspaceId] ?? demoWorkspaceFiles.w1;
+        if (!template) throw new Error("Demo workspace files are unavailable.");
+        const pane = [...currentSnapshot.agents, ...currentSnapshot.shellPanes].find(
+          (candidate) => candidate.workspaceId === workspaceId && candidate.paneId === paneId,
+        );
+        if (!pane) throw new Error("Demo pane not found in workspace.");
+        return {
+          ...template,
+          workspaceId,
+          root:
+            workspace.worktree?.checkoutPath ??
+            pane?.cwd ??
+            `/Users/demo/Projects/${workspace.label}`,
+        };
+      }
+      if (!transport) throw new Error("Connect to a Herdr bridge first.");
+      return transport.workspaceFiles(workspaceId, { paneId, signal });
+    },
+    [mode, transport],
+  );
+
+  const readWorkspaceFile = useCallback(
+    async (
+      workspaceId: string,
+      paneId: string,
+      path: string,
+      signal?: AbortSignal,
+    ): Promise<WorkspaceFileResponse> => {
+      if (mode === "demo") {
+        const pane = [...snapshotRef.current.agents, ...snapshotRef.current.shellPanes].find(
+          (candidate) => candidate.workspaceId === workspaceId && candidate.paneId === paneId,
+        );
+        if (!pane) throw new Error("Demo pane not found in workspace.");
+        const file = demoWorkspaceFile(workspaceId, path);
+        if (!file) throw new Error("Demo workspace file not found.");
+        return file;
+      }
+      if (!transport) throw new Error("Connect to a Herdr bridge first.");
+      return transport.workspaceFile(workspaceId, path, { paneId, signal });
+    },
+    [mode, transport],
+  );
+
+  const readWorkspaceGitStatus = useCallback(
+    async (
+      workspaceId: string,
+      paneId: string,
+      signal?: AbortSignal,
+    ): Promise<WorkspaceGitStatusResponse> => {
+      if (mode === "demo") {
+        const pane = [...snapshotRef.current.agents, ...snapshotRef.current.shellPanes].find(
+          (candidate) => candidate.workspaceId === workspaceId && candidate.paneId === paneId,
+        );
+        if (!pane) throw new Error("Demo pane not found in workspace.");
+        return (
+          demoWorkspaceGit[workspaceId] ?? {
+            workspaceId,
+            isRepo: true,
+            branch: "main",
+            upstream: "origin/main",
+            ahead: 0,
+            behind: 0,
+            insertions: 0,
+            deletions: 0,
+            files: [],
+          }
+        );
+      }
+      if (!transport) throw new Error("Connect to a Herdr bridge first.");
+      return transport.workspaceGit(workspaceId, { paneId, signal });
+    },
+    [mode, transport],
+  );
+
+  const readWorkspaceGitDiff = useCallback(
+    async (
+      workspaceId: string,
+      paneId: string,
+      path: string,
+      signal?: AbortSignal,
+    ): Promise<WorkspaceGitDiffResponse> => {
+      if (mode === "demo") {
+        const pane = [...snapshotRef.current.agents, ...snapshotRef.current.shellPanes].find(
+          (candidate) => candidate.workspaceId === workspaceId && candidate.paneId === paneId,
+        );
+        if (!pane) throw new Error("Demo pane not found in workspace.");
+        const diff = demoWorkspaceDiff(workspaceId, path);
+        if (!diff) throw new Error("Demo Git change not found.");
+        return diff;
+      }
+      if (!transport) throw new Error("Connect to a Herdr bridge first.");
+      return transport.workspaceDiff(workspaceId, path, { paneId, signal });
     },
     [mode, transport],
   );
@@ -396,7 +530,10 @@ export function useHerdrConnection() {
             })),
             tabs: current.tabs.map((tab) => ({ ...tab, focused: tab.tabId === pane.tabId })),
             agents: current.agents.map((agent) => ({ ...agent, focused: agent.paneId === paneId })),
-            shellPanes: current.shellPanes.map((shell) => ({ ...shell, focused: shell.paneId === paneId })),
+            shellPanes: current.shellPanes.map((shell) => ({
+              ...shell,
+              focused: shell.paneId === paneId,
+            })),
             ts: Date.now(),
           };
         });
@@ -441,9 +578,7 @@ export function useHerdrConnection() {
         (candidate) => candidate.workspaceId === request.workspaceId,
       );
       if (!workspace) return { ok: false, error: "Space or worktree not found." };
-      const workspaceTabs = snapshot.tabs.filter(
-        (tab) => tab.workspaceId === request.workspaceId,
-      );
+      const workspaceTabs = snapshot.tabs.filter((tab) => tab.workspaceId === request.workspaceId);
       const number = Math.max(0, ...snapshot.tabs.map((tab) => tab.number)) + 1;
       const label = request.label?.trim() || String(workspaceTabs.length + 1);
 
@@ -477,7 +612,14 @@ export function useHerdrConnection() {
           ),
           tabs: [
             ...current.tabs,
-            { tabId, workspaceId: workspace.workspaceId, number, label, focused: false, paneCount: 1 },
+            {
+              tabId,
+              workspaceId: workspace.workspaceId,
+              number,
+              label,
+              focused: false,
+              paneCount: 1,
+            },
           ],
           shellPanes: [
             ...current.shellPanes,
@@ -790,10 +932,7 @@ export function useHerdrConnection() {
             ),
             result.workspace,
           ].sort((left, right) => left.number - right.number),
-          tabs: [
-            ...current.tabs.filter((tab) => tab.tabId !== result.tab.tabId),
-            result.tab,
-          ],
+          tabs: [...current.tabs.filter((tab) => tab.tabId !== result.tab.tabId), result.tab],
           shellPanes: [
             ...current.shellPanes.filter((pane) => pane.paneId !== result.pane.paneId),
             {
@@ -848,7 +987,9 @@ export function useHerdrConnection() {
       if (mode === "demo") {
         setSnapshot((current) => ({
           ...current,
-          workspaces: current.workspaces.filter((workspace) => workspace.workspaceId !== workspaceId),
+          workspaces: current.workspaces.filter(
+            (workspace) => workspace.workspaceId !== workspaceId,
+          ),
           tabs: current.tabs.filter((tab) => tab.workspaceId !== workspaceId),
           agents: current.agents.filter((pane) => pane.workspaceId !== workspaceId),
           shellPanes: current.shellPanes.filter((pane) => pane.workspaceId !== workspaceId),
@@ -861,7 +1002,9 @@ export function useHerdrConnection() {
       if (result.ok) {
         setSnapshot((current) => ({
           ...current,
-          workspaces: current.workspaces.filter((workspace) => workspace.workspaceId !== workspaceId),
+          workspaces: current.workspaces.filter(
+            (workspace) => workspace.workspaceId !== workspaceId,
+          ),
           tabs: current.tabs.filter((tab) => tab.workspaceId !== workspaceId),
           agents: current.agents.filter((pane) => pane.workspaceId !== workspaceId),
           shellPanes: current.shellPanes.filter((pane) => pane.workspaceId !== workspaceId),
@@ -924,6 +1067,10 @@ export function useHerdrConnection() {
     useDemo,
     refresh,
     readPane,
+    listWorkspaceFiles,
+    readWorkspaceFile,
+    readWorkspaceGitStatus,
+    readWorkspaceGitDiff,
     sendReply,
     sendInput,
     uploadImage,
@@ -1011,7 +1158,8 @@ export function usePaneOutput(
       try {
         const next = await readPane(paneId, controller.signal);
         if (controller.signal.aborted) return;
-        if (next.paneId !== paneId) throw new Error("Pane response did not match the selected pane.");
+        if (next.paneId !== paneId)
+          throw new Error("Pane response did not match the selected pane.");
         setOutput(next);
         setError(null);
       } catch (reason) {
@@ -1064,9 +1212,12 @@ export function usePaneOutput(
       },
       mode === "live" ? 900 : 0,
     );
-    const timer = setInterval(() => {
-      if (!paneStreamConnectedRef.current) void load();
-    }, mode === "live" ? 1_600 : 5_000);
+    const timer = setInterval(
+      () => {
+        if (!paneStreamConnectedRef.current) void load();
+      },
+      mode === "live" ? 1_600 : 5_000,
+    );
     return () => {
       controller.abort();
       unsubscribe();

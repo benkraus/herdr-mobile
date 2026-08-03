@@ -98,9 +98,56 @@ export interface UploadImageRequest {
   uri?: string;
 }
 
-export type UploadImageResponse =
-  | { ok: true; path: string }
-  | { ok: false; error: string };
+export type UploadImageResponse = { ok: true; path: string } | { ok: false; error: string };
+
+export interface WorkspaceFileEntry {
+  path: string;
+  kind: "file" | "directory";
+}
+
+export interface WorkspaceFilesResponse {
+  workspaceId: string;
+  root: string;
+  entries: WorkspaceFileEntry[];
+  truncated: boolean;
+}
+
+export interface WorkspaceFileResponse {
+  workspaceId: string;
+  path: string;
+  mediaType: string;
+  encoding: "utf8" | "base64";
+  content: string;
+  size: number;
+}
+
+export interface WorkspaceGitFile {
+  path: string;
+  status: string;
+  indexStatus: string;
+  worktreeStatus: string;
+  insertions: number;
+  deletions: number;
+}
+
+export interface WorkspaceGitStatusResponse {
+  workspaceId: string;
+  isRepo: boolean;
+  branch: string | null;
+  upstream: string | null;
+  ahead: number;
+  behind: number;
+  insertions: number;
+  deletions: number;
+  files: WorkspaceGitFile[];
+}
+
+export interface WorkspaceGitDiffResponse {
+  workspaceId: string;
+  path: string;
+  patch: string;
+  truncated: boolean;
+}
 
 export interface CreatedPane {
   paneId: string;

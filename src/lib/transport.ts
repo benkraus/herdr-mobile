@@ -11,6 +11,10 @@ import type {
   TabCreateResponse,
   UploadImageRequest,
   UploadImageResponse,
+  WorkspaceFileResponse,
+  WorkspaceFilesResponse,
+  WorkspaceGitDiffResponse,
+  WorkspaceGitStatusResponse,
   WorkspaceCreateResponse,
   WorktreeCreateResponse,
 } from "./types";
@@ -18,7 +22,16 @@ import type {
 const READ_TIMEOUT_MS = 10_000;
 const WRITE_TIMEOUT_MS = 20_000;
 const UPLOAD_TIMEOUT_MS = 60_000;
+const WORKSPACE_LIST_TIMEOUT_MS = 30_000;
+const WORKSPACE_FILE_TIMEOUT_MS = 60_000;
+const WORKSPACE_GIT_TIMEOUT_MS = 70_000;
+const WORKSPACE_DIFF_TIMEOUT_MS = 90_000;
 const AGENT_STATUSES = new Set(["idle", "working", "blocked", "done", "unknown"]);
+
+export interface WorkspaceInspectionOptions {
+  paneId?: string;
+  signal?: AbortSignal;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -26,6 +39,29 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function invalidResponse(): never {
   throw new Error("Herdr Control returned an incompatible response.");
+}
+
+function bridgeErrorMessage(detail: string, statusText: string): string {
+  try {
+    const body = JSON.parse(detail) as unknown;
+    if (isRecord(body) && typeof body.error === "string" && body.error.trim()) {
+      return body.error.trim();
+    }
+  } catch {
+    // Plain-text bridge errors are already human-readable.
+  }
+  return detail.trim() || statusText || "Herdr request failed.";
+}
+
+function workspaceInspectionQuery(
+  path: string | undefined,
+  options: WorkspaceInspectionOptions | undefined,
+): string {
+  const params = new URLSearchParams();
+  if (path !== undefined) params.set("path", path);
+  if (options?.paneId) params.set("paneId", options.paneId);
+  const query = params.toString();
+  return query ? `?${query}` : "";
 }
 
 function isAgent(value: unknown): boolean {
@@ -46,16 +82,19 @@ function isAgent(value: unknown): boolean {
 }
 
 function isWorkspaceWorktree(value: unknown): boolean {
-  return isRecord(value) &&
+  return (
+    isRecord(value) &&
     typeof value.repoKey === "string" &&
     typeof value.repoName === "string" &&
     typeof value.repoRoot === "string" &&
     typeof value.checkoutPath === "string" &&
-    typeof value.isLinkedWorktree === "boolean";
+    typeof value.isLinkedWorktree === "boolean"
+  );
 }
 
 function isWorkspace(value: unknown): boolean {
-  return isRecord(value) &&
+  return (
+    isRecord(value) &&
     typeof value.workspaceId === "string" &&
     typeof value.number === "number" &&
     typeof value.label === "string" &&
@@ -63,38 +102,44 @@ function isWorkspace(value: unknown): boolean {
     typeof value.activeTabId === "string" &&
     typeof value.tabCount === "number" &&
     typeof value.paneCount === "number" &&
-    (value.worktree === undefined || isWorkspaceWorktree(value.worktree));
+    (value.worktree === undefined || isWorkspaceWorktree(value.worktree))
+  );
 }
 
 function decodeSnapshot(value: unknown): SnapshotResponse {
   if (!isRecord(value)) return invalidResponse();
   const validWorkspaces = Array.isArray(value.workspaces) && value.workspaces.every(isWorkspace);
-  const validTabs = Array.isArray(value.tabs) && value.tabs.every((item) =>
-    isRecord(item) &&
-    typeof item.tabId === "string" &&
-    typeof item.workspaceId === "string" &&
-    typeof item.number === "number" &&
-    typeof item.label === "string" &&
-    typeof item.focused === "boolean" &&
-    typeof item.paneCount === "number"
-  );
-  const validDevice = value.device === undefined || (
-    isRecord(value.device) &&
-    typeof value.device.enforced === "boolean" &&
-    (value.device.device === null || typeof value.device.device === "string") &&
-    typeof value.device.authorized === "boolean"
-  );
-  const validSessions = value.sessions === undefined || (
-    Array.isArray(value.sessions) && value.sessions.every((item) =>
-      isRecord(item) &&
-      typeof item.name === "string" &&
-      typeof item.isPrimary === "boolean" &&
-      typeof item.reachable === "boolean" &&
-      typeof item.agents === "number" &&
-      typeof item.working === "number" &&
-      typeof item.blocked === "number"
-    )
-  );
+  const validTabs =
+    Array.isArray(value.tabs) &&
+    value.tabs.every(
+      (item) =>
+        isRecord(item) &&
+        typeof item.tabId === "string" &&
+        typeof item.workspaceId === "string" &&
+        typeof item.number === "number" &&
+        typeof item.label === "string" &&
+        typeof item.focused === "boolean" &&
+        typeof item.paneCount === "number",
+    );
+  const validDevice =
+    value.device === undefined ||
+    (isRecord(value.device) &&
+      typeof value.device.enforced === "boolean" &&
+      (value.device.device === null || typeof value.device.device === "string") &&
+      typeof value.device.authorized === "boolean");
+  const validSessions =
+    value.sessions === undefined ||
+    (Array.isArray(value.sessions) &&
+      value.sessions.every(
+        (item) =>
+          isRecord(item) &&
+          typeof item.name === "string" &&
+          typeof item.isPrimary === "boolean" &&
+          typeof item.reachable === "boolean" &&
+          typeof item.agents === "number" &&
+          typeof item.working === "number" &&
+          typeof item.blocked === "number",
+      ));
   if (
     (value.bridge !== "connected" && value.bridge !== "disconnected") ||
     !Array.isArray(value.agents) ||
@@ -106,7 +151,8 @@ function decodeSnapshot(value: unknown): SnapshotResponse {
     !validDevice ||
     !validSessions ||
     typeof value.ts !== "number"
-  ) return invalidResponse();
+  )
+    return invalidResponse();
   return value as unknown as SnapshotResponse;
 }
 
@@ -118,7 +164,8 @@ function decodePane(value: unknown): PaneReadResponse {
     typeof value.truncated !== "boolean" ||
     typeof value.revision !== "number" ||
     (value.notModified !== undefined && typeof value.notModified !== "boolean")
-  ) return invalidResponse();
+  )
+    return invalidResponse();
   return value as unknown as PaneReadResponse;
 }
 
@@ -130,7 +177,8 @@ function decodeAction(value: unknown): ActionResponse {
     (value.textDelivered !== undefined && typeof value.textDelivered !== "boolean") ||
     (value.deliveryAmbiguous !== undefined && typeof value.deliveryAmbiguous !== "boolean") ||
     (value.cancelled !== undefined && typeof value.cancelled !== "boolean")
-  ) return invalidResponse();
+  )
+    return invalidResponse();
   return value as ActionResponse;
 }
 
@@ -142,6 +190,77 @@ function decodeUploadImage(value: unknown): UploadImageResponse {
   }
   if (typeof value.error !== "string") return invalidResponse();
   return { ok: false, error: value.error };
+}
+
+function decodeWorkspaceFiles(value: unknown): WorkspaceFilesResponse {
+  if (
+    !isRecord(value) ||
+    typeof value.workspaceId !== "string" ||
+    typeof value.root !== "string" ||
+    typeof value.truncated !== "boolean" ||
+    !Array.isArray(value.entries) ||
+    !value.entries.every(
+      (entry) =>
+        isRecord(entry) &&
+        typeof entry.path === "string" &&
+        (entry.kind === "file" || entry.kind === "directory"),
+    )
+  )
+    return invalidResponse();
+  return value as unknown as WorkspaceFilesResponse;
+}
+
+function decodeWorkspaceFile(value: unknown): WorkspaceFileResponse {
+  if (
+    !isRecord(value) ||
+    typeof value.workspaceId !== "string" ||
+    typeof value.path !== "string" ||
+    typeof value.mediaType !== "string" ||
+    (value.encoding !== "utf8" && value.encoding !== "base64") ||
+    typeof value.content !== "string" ||
+    typeof value.size !== "number"
+  )
+    return invalidResponse();
+  return value as unknown as WorkspaceFileResponse;
+}
+
+function decodeWorkspaceGitStatus(value: unknown): WorkspaceGitStatusResponse {
+  if (
+    !isRecord(value) ||
+    typeof value.workspaceId !== "string" ||
+    typeof value.isRepo !== "boolean" ||
+    (value.branch !== null && typeof value.branch !== "string") ||
+    (value.upstream !== null && typeof value.upstream !== "string") ||
+    typeof value.ahead !== "number" ||
+    typeof value.behind !== "number" ||
+    typeof value.insertions !== "number" ||
+    typeof value.deletions !== "number" ||
+    !Array.isArray(value.files) ||
+    !value.files.every(
+      (file) =>
+        isRecord(file) &&
+        typeof file.path === "string" &&
+        typeof file.status === "string" &&
+        typeof file.indexStatus === "string" &&
+        typeof file.worktreeStatus === "string" &&
+        typeof file.insertions === "number" &&
+        typeof file.deletions === "number",
+    )
+  )
+    return invalidResponse();
+  return value as unknown as WorkspaceGitStatusResponse;
+}
+
+function decodeWorkspaceGitDiff(value: unknown): WorkspaceGitDiffResponse {
+  if (
+    !isRecord(value) ||
+    typeof value.workspaceId !== "string" ||
+    typeof value.path !== "string" ||
+    typeof value.patch !== "string" ||
+    typeof value.truncated !== "boolean"
+  )
+    return invalidResponse();
+  return value as unknown as WorkspaceGitDiffResponse;
 }
 
 function imageUploadBlob(request: UploadImageRequest): Blob {
@@ -171,12 +290,14 @@ function appendImageUpload(data: FormData, request: UploadImageRequest): void {
 }
 
 function isCreatedPane(value: unknown): boolean {
-  return isRecord(value) &&
+  return (
+    isRecord(value) &&
     typeof value.paneId === "string" &&
     typeof value.workspaceId === "string" &&
     typeof value.workspaceLabel === "string" &&
     typeof value.tabId === "string" &&
-    typeof value.cwd === "string";
+    typeof value.cwd === "string"
+  );
 }
 
 function decodeCreate(value: unknown): TabCreateResponse {
@@ -188,7 +309,8 @@ function decodeCreate(value: unknown): TabCreateResponse {
   if (
     typeof value.error !== "string" ||
     (value.deliveryAmbiguous !== undefined && typeof value.deliveryAmbiguous !== "boolean")
-  ) return invalidResponse();
+  )
+    return invalidResponse();
   return value as unknown as TabCreateResponse;
 }
 
@@ -205,13 +327,15 @@ function decodeWorktreeCreate(value: unknown): WorktreeCreateResponse {
       typeof value.tab.label !== "string" ||
       typeof value.tab.focused !== "boolean" ||
       typeof value.tab.paneCount !== "number"
-    ) return invalidResponse();
+    )
+      return invalidResponse();
     return value as unknown as WorktreeCreateResponse;
   }
   if (
     typeof value.error !== "string" ||
     (value.deliveryAmbiguous !== undefined && typeof value.deliveryAmbiguous !== "boolean")
-  ) return invalidResponse();
+  )
+    return invalidResponse();
   return value as unknown as WorktreeCreateResponse;
 }
 
@@ -238,8 +362,34 @@ export interface HerdrTransport {
     requestId: string,
     signal?: AbortSignal,
   ): Promise<ActionResponse>;
-  createWorktree(request: CreateWorktreeRequest, signal?: AbortSignal): Promise<WorktreeCreateResponse>;
-  removeWorktree(workspaceId: string, force: boolean, requestId: string, signal?: AbortSignal): Promise<ActionResponse>;
+  createWorktree(
+    request: CreateWorktreeRequest,
+    signal?: AbortSignal,
+  ): Promise<WorktreeCreateResponse>;
+  removeWorktree(
+    workspaceId: string,
+    force: boolean,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<ActionResponse>;
+  workspaceFiles(
+    workspaceId: string,
+    options?: WorkspaceInspectionOptions,
+  ): Promise<WorkspaceFilesResponse>;
+  workspaceFile(
+    workspaceId: string,
+    path: string,
+    options?: WorkspaceInspectionOptions,
+  ): Promise<WorkspaceFileResponse>;
+  workspaceGit(
+    workspaceId: string,
+    options?: WorkspaceInspectionOptions,
+  ): Promise<WorkspaceGitStatusResponse>;
+  workspaceDiff(
+    workspaceId: string,
+    path: string,
+    options?: WorkspaceInspectionOptions,
+  ): Promise<WorkspaceGitDiffResponse>;
 }
 
 export type HerdrLiveEvent =
@@ -376,7 +526,10 @@ export function isUnknownSessionError(error: unknown, session: string): boolean 
   }
 }
 
-function timedSignal(signal: AbortSignal | undefined, timeoutMs: number): {
+function timedSignal(
+  signal: AbortSignal | undefined,
+  timeoutMs: number,
+): {
   signal: AbortSignal;
   dispose: () => void;
 } {
@@ -433,9 +586,7 @@ export class HerdrHttpTransport implements HerdrTransport {
     signal?: AbortSignal,
   ): Promise<UploadImageResponse> {
     if (request.uri?.startsWith("file://")) {
-      const url = new URL(
-        this.baseUrl + "/api/pane/" + encodeURIComponent(paneId) + "/upload",
-      );
+      const url = new URL(this.baseUrl + "/api/pane/" + encodeURIComponent(paneId) + "/upload");
       if (this.session) url.searchParams.set("session", this.session);
       const requestSignal = timedSignal(signal, UPLOAD_TIMEOUT_MS);
       try {
@@ -449,11 +600,7 @@ export class HerdrHttpTransport implements HerdrTransport {
           signal: requestSignal.signal,
         });
         if (result.status < 200 || result.status >= 300) {
-          throw new HerdrHttpError(
-            result.status,
-            result.status + " " + result.body,
-            result.body,
-          );
+          throw new HerdrHttpError(result.status, result.status + " " + result.body, result.body);
         }
         return decodeUploadImage(JSON.parse(result.body));
       } finally {
@@ -540,6 +687,68 @@ export class HerdrHttpTransport implements HerdrTransport {
     );
   }
 
+  workspaceFiles(
+    workspaceId: string,
+    options?: WorkspaceInspectionOptions,
+  ): Promise<WorkspaceFilesResponse> {
+    return this.request(
+      "/api/workspace/" +
+        encodeURIComponent(workspaceId) +
+        "/files" +
+        workspaceInspectionQuery(undefined, options),
+      { signal: options?.signal },
+      decodeWorkspaceFiles,
+      WORKSPACE_LIST_TIMEOUT_MS,
+    );
+  }
+
+  workspaceFile(
+    workspaceId: string,
+    path: string,
+    options?: WorkspaceInspectionOptions,
+  ): Promise<WorkspaceFileResponse> {
+    return this.request(
+      "/api/workspace/" +
+        encodeURIComponent(workspaceId) +
+        "/file" +
+        workspaceInspectionQuery(path, options),
+      { signal: options?.signal },
+      decodeWorkspaceFile,
+      WORKSPACE_FILE_TIMEOUT_MS,
+    );
+  }
+
+  workspaceGit(
+    workspaceId: string,
+    options?: WorkspaceInspectionOptions,
+  ): Promise<WorkspaceGitStatusResponse> {
+    return this.request(
+      "/api/workspace/" +
+        encodeURIComponent(workspaceId) +
+        "/git" +
+        workspaceInspectionQuery(undefined, options),
+      { signal: options?.signal },
+      decodeWorkspaceGitStatus,
+      WORKSPACE_GIT_TIMEOUT_MS,
+    );
+  }
+
+  workspaceDiff(
+    workspaceId: string,
+    path: string,
+    options?: WorkspaceInspectionOptions,
+  ): Promise<WorkspaceGitDiffResponse> {
+    return this.request(
+      "/api/workspace/" +
+        encodeURIComponent(workspaceId) +
+        "/diff" +
+        workspaceInspectionQuery(path, options),
+      { signal: options?.signal },
+      decodeWorkspaceGitDiff,
+      WORKSPACE_DIFF_TIMEOUT_MS,
+    );
+  }
+
   subscribeLive(listener: (event: HerdrLiveEvent) => void): HerdrLiveSubscription {
     let socket: WebSocket | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -552,24 +761,28 @@ export class HerdrHttpTransport implements HerdrTransport {
     const retryMs = [500, 1_000, 2_000, 5_000];
     const sendWatch = () => {
       if (!socket || socket.readyState !== WebSocket.OPEN) return;
-      socket.send(JSON.stringify({
-        type: "watch_pane",
-        paneId: watchedPane,
-        cols: watchedSize.cols,
-        rows: watchedSize.rows,
-      }));
+      socket.send(
+        JSON.stringify({
+          type: "watch_pane",
+          paneId: watchedPane,
+          cols: watchedSize.cols,
+          rows: watchedSize.rows,
+        }),
+      );
     };
     const flushScroll = () => {
       scrollTimer = null;
       const rows = pendingScrollRows;
       pendingScrollRows = 0;
       if (!socket || socket.readyState !== WebSocket.OPEN || !watchedPane || rows === 0) return;
-      socket.send(JSON.stringify({
-        type: "scroll_pane",
-        paneId: watchedPane,
-        direction: rows > 0 ? "down" : "up",
-        lines: Math.min(Math.abs(rows), 200),
-      }));
+      socket.send(
+        JSON.stringify({
+          type: "scroll_pane",
+          paneId: watchedPane,
+          direction: rows > 0 ? "down" : "up",
+          lines: Math.min(Math.abs(rows), 200),
+        }),
+      );
     };
     const connect = () => {
       if (closed) return;
@@ -682,7 +895,7 @@ export class HerdrHttpTransport implements HerdrTransport {
         const detail = await response.text().catch(() => response.statusText);
         throw new HerdrHttpError(
           response.status,
-          response.status + " " + (detail || response.statusText),
+          bridgeErrorMessage(detail, response.statusText),
           detail,
         );
       }

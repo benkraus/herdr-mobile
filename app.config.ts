@@ -7,12 +7,16 @@ const dmSansFonts = {
 } as const;
 
 const icon = "./assets/prod/herdr-app-icon-1024.png";
+const isDebugBuild = process.env.HERDR_APP_VARIANT === "debug";
+const appName = isDebugBuild ? "Herdr Debug" : "Herdr";
+const scheme = isDebugBuild ? "herdr-debug" : "herdr";
+const bundleIdentifier = isDebugBuild ? "dev.herdr.mobile.debug" : "dev.herdr.mobile";
 
 const config: ExpoConfig = {
-  name: "Herdr",
+  name: appName,
   slug: "herdr-mobile",
   platforms: ["ios", "android"],
-  scheme: "herdr",
+  scheme,
   version: "0.1.0",
   orientation: "portrait",
   icon,
@@ -20,7 +24,7 @@ const config: ExpoConfig = {
   ios: {
     icon,
     supportsTablet: true,
-    bundleIdentifier: "dev.herdr.mobile",
+    bundleIdentifier,
     infoPlist: {
       NSAppTransportSecurity: { NSAllowsArbitraryLoads: true },
       NSLocalNetworkUsageDescription:
@@ -29,7 +33,7 @@ const config: ExpoConfig = {
     },
   },
   android: {
-    package: "dev.herdr.mobile",
+    package: bundleIdentifier,
     adaptiveIcon: {
       backgroundColor: "#d9dad8",
       foregroundImage: "./assets/prod/herdr-adaptive-foreground-1024.png",

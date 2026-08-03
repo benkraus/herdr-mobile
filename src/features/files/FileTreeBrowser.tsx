@@ -226,9 +226,22 @@ export function FileTreeBrowser(props: {
 
   if (props.error && props.entries.length === 0) {
     return (
-      <View className="flex-1 bg-sheet px-4 py-5">
+      <View className="flex-1 items-start bg-sheet px-4 py-5">
         <Text className="text-sm font-t3-bold text-foreground">Files unavailable</Text>
         <Text className="mt-1 text-xs leading-normal text-foreground-muted">{props.error}</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Retry loading files"
+          disabled={props.isPending}
+          onPress={props.onRefresh}
+          className="mt-4 min-h-10 min-w-24 items-center justify-center rounded-full bg-subtle-strong px-4 active:opacity-65 disabled:opacity-45"
+        >
+          {props.isPending ? (
+            <ActivityIndicator size="small" />
+          ) : (
+            <Text className="text-xs font-t3-bold text-foreground">Try again</Text>
+          )}
+        </Pressable>
       </View>
     );
   }
