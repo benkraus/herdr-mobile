@@ -9,6 +9,8 @@ import android.text.TextWatcher
 import android.view.KeyEvent
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputConnection
+import android.view.inputmethod.InputConnectionWrapper
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.FrameLayout
@@ -17,10 +19,48 @@ import expo.modules.kotlin.viewevent.EventDispatcher
 import expo.modules.kotlin.views.ExpoView
 import kotlin.math.max
 
+private class TerminalInputEditText(context: Context) : EditText(context) {
+  var onBackspace: (() -> Unit)? = null
+
+  override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
+    val connection = super.onCreateInputConnection(outAttrs) ?: return null
+    return object : InputConnectionWrapper(connection, false) {
+      override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
+        if (beforeLength > 0) {
+          onBackspace?.invoke()
+          return true
+        }
+        return super.deleteSurroundingText(beforeLength, afterLength)
+      }
+
+      override fun deleteSurroundingTextInCodePoints(
+        beforeLength: Int,
+        afterLength: Int,
+      ): Boolean {
+        if (beforeLength > 0) {
+          onBackspace?.invoke()
+          return true
+        }
+        return super.deleteSurroundingTextInCodePoints(beforeLength, afterLength)
+      }
+
+      override fun sendKeyEvent(event: KeyEvent): Boolean {
+        if (event.keyCode == KeyEvent.KEYCODE_DEL) {
+          if (event.action == KeyEvent.ACTION_DOWN) {
+            onBackspace?.invoke()
+          }
+          return true
+        }
+        return super.sendKeyEvent(event)
+      }
+    }
+  }
+}
+
 class T3TerminalView(context: Context, appContext: AppContext) : ExpoView(context, appContext) {
   private val container = FrameLayout(context)
   private val terminalCanvas = TerminalCanvasView(context)
-  private val inputView = EditText(context)
+  private val inputView = TerminalInputEditText(context)
   private val onInput by EventDispatcher()
   private val onResize by EventDispatcher()
   private val onViewportScroll by EventDispatcher()
@@ -196,6 +236,7 @@ class T3TerminalView(context: Context, appContext: AppContext) : ExpoView(contex
     if (isCleanedUp) return
     isCleanedUp = true
     inputView.setOnEditorActionListener(null)
+    inputView.onBackspace = null
     terminalCanvas.onScrollRows = null
     terminalCanvas.onRequestKeyboard = null
     terminalCanvas.onCellMetricsChanged = null
@@ -204,6 +245,9 @@ class T3TerminalView(context: Context, appContext: AppContext) : ExpoView(contex
   }
 
   private fun configureInputView() {
+    inputView.onBackspace = {
+      onInput(mapOf("data" to "\u007F"))
+    }
     inputView.setSingleLine(true)
     inputView.setTextColor(Color.TRANSPARENT)
     inputView.setHintTextColor(Color.TRANSPARENT)

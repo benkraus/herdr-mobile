@@ -471,6 +471,13 @@ export class HerdrHttpTransport implements HerdrTransport {
   }
 
   input(paneId: string, data: string, signal?: AbortSignal): Promise<ActionResponse> {
+    if (data === "\u007F") {
+      return this.request(
+        "/api/pane/" + encodeURIComponent(paneId) + "/keys",
+        { method: "POST", body: JSON.stringify({ keys: ["Backspace"] }), signal },
+        decodeAction,
+      );
+    }
     return this.request(
       "/api/pane/" + encodeURIComponent(paneId) + "/input",
       { method: "POST", body: JSON.stringify({ data }), signal },

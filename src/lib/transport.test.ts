@@ -243,6 +243,7 @@ describe("HerdrHttpTransport", () => {
     const transport = new HerdrHttpTransport({ baseUrl: "https://buildbox.example.ts.net" });
 
     await transport.input("pane-1", "a\r");
+    await transport.input("pane-1", "\u007F");
     await transport.focusPane("pane-1");
     await transport.createTab({ workspaceId: "w1", requestId: "tab-1" });
     await transport.createWorkspace({
@@ -258,6 +259,7 @@ describe("HerdrHttpTransport", () => {
 
     expect(fetchMock.mock.calls.map((call) => String(call[0]))).toEqual([
       "https://buildbox.example.ts.net/api/pane/pane-1/input",
+      "https://buildbox.example.ts.net/api/pane/pane-1/keys",
       "https://buildbox.example.ts.net/api/focus/pane-1",
       "https://buildbox.example.ts.net/api/tab",
       "https://buildbox.example.ts.net/api/workspace",
@@ -268,11 +270,14 @@ describe("HerdrHttpTransport", () => {
       "https://buildbox.example.ts.net/api/worktree/w2",
     ]);
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ body: JSON.stringify({ data: "a\r" }) });
-    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+      body: JSON.stringify({ keys: ["Backspace"] }),
+    });
+    expect(fetchMock.mock.calls[3]?.[1]).toMatchObject({
       method: "POST",
       body: JSON.stringify({ workspaceId: "w1", requestId: "tab-1" }),
     });
-    expect(fetchMock.mock.calls[3]?.[1]).toMatchObject({
+    expect(fetchMock.mock.calls[4]?.[1]).toMatchObject({
       method: "POST",
       body: JSON.stringify({
         label: "scratch",
@@ -280,19 +285,19 @@ describe("HerdrHttpTransport", () => {
         requestId: "space-1",
       }),
     });
-    expect(fetchMock.mock.calls[4]?.[1]).toMatchObject({
+    expect(fetchMock.mock.calls[5]?.[1]).toMatchObject({
       method: "PATCH",
       body: JSON.stringify({ label: "Review" }),
     });
-    expect(fetchMock.mock.calls[5]?.[1]).toMatchObject({
+    expect(fetchMock.mock.calls[6]?.[1]).toMatchObject({
       method: "DELETE",
       body: JSON.stringify({ requestId: "close-tab-1" }),
     });
-    expect(fetchMock.mock.calls[6]?.[1]).toMatchObject({
+    expect(fetchMock.mock.calls[7]?.[1]).toMatchObject({
       method: "DELETE",
       body: JSON.stringify({ requestId: "close-space-1" }),
     });
-    expect(fetchMock.mock.calls[8]?.[1]).toMatchObject({
+    expect(fetchMock.mock.calls[9]?.[1]).toMatchObject({
       method: "DELETE",
       body: JSON.stringify({ force: true, requestId: "remove-1" }),
     });
