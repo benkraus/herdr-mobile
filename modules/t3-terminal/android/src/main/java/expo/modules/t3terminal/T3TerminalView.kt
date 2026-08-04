@@ -19,6 +19,9 @@ import expo.modules.kotlin.viewevent.EventDispatcher
 import expo.modules.kotlin.views.ExpoView
 import kotlin.math.max
 
+internal fun normalizeTerminalInput(value: String): String =
+  value.replace("\r\n", "\r").replace('\n', '\r')
+
 private class TerminalInputEditText(context: Context) : EditText(context) {
   var onBackspace: (() -> Unit)? = null
 
@@ -305,7 +308,10 @@ class T3TerminalView(context: Context, appContext: AppContext) : ExpoView(contex
           if (start >= end) return
           val insertedText = s.subSequence(start, end).toString()
           if (insertedText.isNotEmpty()) {
-            onInput(mapOf("data" to insertedText))
+            // Samsung Keyboard can commit LF as ordinary text instead of
+            // invoking IME_ACTION_SEND. Raw-mode TUIs need CR for Enter;
+            // LF is Ctrl+J and only inserts a newline into the prompt.
+            onInput(mapOf("data" to normalizeTerminalInput(insertedText)))
           }
         }
 
