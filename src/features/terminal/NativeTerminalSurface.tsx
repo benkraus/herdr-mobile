@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useRef } from "react";
 import {
   Pressable,
+  Platform,
   ScrollView,
   TextInput,
   View,
@@ -12,6 +13,8 @@ import {
 
 import { AppText as Text } from "../../components/AppText";
 import { MOBILE_TYPOGRAPHY } from "../../lib/typography";
+import { terminalKeyInputData } from "../../lib/terminalKeys";
+import type { TerminalKey, TerminalSubmitKey } from "../../lib/types";
 import {
   getNativeTerminalHardwareKeyRevision,
   resolveNativeTerminalSurfaceView,
@@ -24,7 +27,8 @@ import {
 import { terminalDebugLog } from "./terminalDebugLog";
 
 interface TerminalInputEvent {
-  readonly data: string;
+  readonly data?: string;
+  readonly key?: TerminalSubmitKey;
 }
 
 interface TerminalResizeEvent {
@@ -43,8 +47,11 @@ interface TerminalSurfaceProps extends ViewProps {
   readonly isRunning: boolean;
   readonly autoFocus?: boolean;
   readonly keyboardFocusRequest?: number;
+  readonly androidImeSubmitKey?: TerminalSubmitKey;
   readonly theme?: TerminalTheme;
   readonly onInput: (data: string) => void;
+  readonly onKey?: (key: TerminalKey) => void;
+  readonly onSubmit?: (data: string, key: TerminalSubmitKey) => void;
   readonly onResize: (size: { readonly cols: number; readonly rows: number }) => void;
   readonly onViewportScroll?: (rows: number) => void;
 }
@@ -70,6 +77,18 @@ const FallbackTerminalSurface = memo(function FallbackTerminalSurface(props: Ter
   const statusLabel = props.isRunning
     ? "Native terminal unavailable. Using text fallback."
     : "Open terminal to start a shell.";
+  const submitKey = Platform.OS === "android" ? (props.androidImeSubmitKey ?? "Enter") : "Enter";
+
+  const handleSubmit = (data: string, key: TerminalSubmitKey) => {
+    if (props.onSubmit) {
+      props.onSubmit(data, key);
+    } else if (props.onKey) {
+      if (data.length > 0) props.onInput(data);
+      props.onKey(key);
+    } else {
+      props.onInput(data + terminalKeyInputData(key));
+    }
+  };
 
   const handleLayout = (event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
@@ -149,11 +168,7 @@ const FallbackTerminalSurface = memo(function FallbackTerminalSurface(props: Ter
             padding: 0,
           }}
           onSubmitEditing={(event) => {
-            const text = event.nativeEvent.text;
-            if (text.length > 0) {
-              // Terminal Enter is CR. LF is Ctrl+J and raw-mode TUIs can treat it as J.
-              props.onInput(`${text}\r`);
-            }
+            handleSubmit(event.nativeEvent.text, submitKey);
           }}
         />
         <Pressable
@@ -200,11 +215,26 @@ export const TerminalSurface = memo(function TerminalSurface(props: TerminalSurf
         return;
       }
       terminalDebugLog("native:onInput", {
-        codes: Array.from(event.nativeEvent.data, (char) => char.codePointAt(0)),
+        codes: event.nativeEvent.data
+          ? Array.from(event.nativeEvent.data, (char) => char.codePointAt(0))
+          : [],
+        key: event.nativeEvent.key,
       });
-      onInput(event.nativeEvent.data);
+      const { data, key } = event.nativeEvent;
+      if (key && data !== undefined && props.onSubmit) {
+        props.onSubmit(data, key);
+      } else if (key && data !== undefined && !props.onKey) {
+        onInput(data + terminalKeyInputData(key));
+      } else if (key && props.onKey) {
+        if (data) onInput(data);
+        props.onKey(key);
+      } else if (key) {
+        onInput(terminalKeyInputData(key));
+      } else if (event.nativeEvent.data !== undefined) {
+        onInput(event.nativeEvent.data);
+      }
     },
-    [onInput, props.isRunning],
+    [onInput, props.isRunning, props.onKey, props.onSubmit],
   );
   const handleNativeResize = useCallback(
     (event: NativeSyntheticEvent<TerminalResizeEvent>) => {
@@ -232,6 +262,9 @@ export const TerminalSurface = memo(function TerminalSurface(props: TerminalSurf
           backgroundColor={theme.background}
           focusRequest={props.isRunning ? (props.keyboardFocusRequest ?? 0) : 0}
           foregroundColor={theme.foreground}
+          {...(Platform.OS === "android"
+            ? { imeSubmitKey: props.androidImeSubmitKey ?? "Enter" }
+            : {})}
           mutedForegroundColor={theme.mutedForeground}
           terminalKey={props.terminalKey}
           initialBuffer={props.buffer}

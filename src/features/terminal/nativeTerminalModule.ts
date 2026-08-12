@@ -3,6 +3,7 @@ import type { NativeSyntheticEvent, ViewProps } from "react-native";
 import { requireNativeView, requireOptionalNativeModule } from "expo";
 
 import { NativeViewResolutionError } from "../../native/nativeViewResolutionError";
+import type { TerminalSubmitKey } from "../../lib/types";
 
 const NATIVE_TERMINAL_MODULE_NAME = "T3TerminalSurface";
 
@@ -13,7 +14,8 @@ interface ExpoGlobalWithViewConfig {
 }
 
 interface TerminalInputEvent {
-  readonly data: string;
+  readonly data?: string;
+  readonly key?: TerminalSubmitKey;
 }
 
 interface TerminalResizeEvent {
@@ -29,6 +31,7 @@ export interface NativeTerminalSurfaceProps extends ViewProps {
   readonly appearanceScheme?: "light" | "dark";
   readonly autoFocus?: boolean;
   readonly focusRequest?: number;
+  readonly imeSubmitKey?: TerminalSubmitKey;
   readonly externalScroll?: boolean;
   readonly themeConfig?: string;
   readonly backgroundColor?: string;

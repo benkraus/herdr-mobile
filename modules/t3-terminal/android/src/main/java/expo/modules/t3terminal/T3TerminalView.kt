@@ -19,15 +19,54 @@ import expo.modules.kotlin.viewevent.EventDispatcher
 import expo.modules.kotlin.views.ExpoView
 import kotlin.math.max
 
+internal enum class TerminalImeSubmitKey(val eventName: String) {
+  ENTER(eventName = "Enter"),
+  TAB(eventName = "Tab"),
+}
+
 internal fun normalizeTerminalInput(value: String): String =
   value.replace("\r\n", "\r").replace('\n', '\r')
 
+internal fun resolveTerminalImeSubmitKey(value: String): TerminalImeSubmitKey =
+  TerminalImeSubmitKey.entries.firstOrNull { it.eventName == value } ?: TerminalImeSubmitKey.ENTER
+
+internal data class TerminalImeInput(
+  val data: String,
+  val submit: Boolean,
+)
+
+internal fun classifyTerminalImeInput(value: String): TerminalImeInput {
+  val normalized = normalizeTerminalInput(value)
+  return if (normalized.endsWith('\r')) {
+    TerminalImeInput(normalized.dropLast(1), submit = true)
+  } else {
+    TerminalImeInput(normalized, submit = false)
+  }
+}
+
+internal fun committedTerminalSpaces(value: CharSequence?): String? {
+  val text = value?.toString() ?: return null
+  return text.takeIf { it.isNotEmpty() && it.all { character -> character == ' ' } }
+}
+
 private class TerminalInputEditText(context: Context) : EditText(context) {
   var onBackspace: (() -> Unit)? = null
+  var onSpace: ((String) -> Unit)? = null
 
   override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
     val connection = super.onCreateInputConnection(outAttrs) ?: return null
     return object : InputConnectionWrapper(connection, false) {
+      override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
+        val spaces = committedTerminalSpaces(text)
+        if (spaces != null) {
+          // Samsung Keyboard can commit the spacebar directly through InputConnection without
+          // mutating this hidden EditText, so its TextWatcher never sees the character.
+          onSpace?.invoke(spaces)
+          return true
+        }
+        return super.commitText(text, newCursorPosition)
+      }
+
       override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
         if (beforeLength > 0) {
           onBackspace?.invoke()
@@ -48,11 +87,19 @@ private class TerminalInputEditText(context: Context) : EditText(context) {
       }
 
       override fun sendKeyEvent(event: KeyEvent): Boolean {
-        if (event.keyCode == KeyEvent.KEYCODE_DEL) {
-          if (event.action == KeyEvent.ACTION_DOWN) {
-            onBackspace?.invoke()
+        when (event.keyCode) {
+          KeyEvent.KEYCODE_DEL -> {
+            if (event.action == KeyEvent.ACTION_DOWN) {
+              onBackspace?.invoke()
+            }
+            return true
           }
-          return true
+          KeyEvent.KEYCODE_SPACE -> {
+            if (event.action == KeyEvent.ACTION_DOWN) {
+              onSpace?.invoke(" ")
+            }
+            return true
+          }
         }
         return super.sendKeyEvent(event)
       }
@@ -93,6 +140,8 @@ class T3TerminalView(context: Context, appContext: AppContext) : ExpoView(contex
       field = value
       feedPendingBuffer()
     }
+
+  internal var imeSubmitKey: TerminalImeSubmitKey = TerminalImeSubmitKey.ENTER
 
   var fontSize: Float = 10f
     set(value) {
@@ -240,6 +289,7 @@ class T3TerminalView(context: Context, appContext: AppContext) : ExpoView(contex
     isCleanedUp = true
     inputView.setOnEditorActionListener(null)
     inputView.onBackspace = null
+    inputView.onSpace = null
     terminalCanvas.onScrollRows = null
     terminalCanvas.onRequestKeyboard = null
     terminalCanvas.onCellMetricsChanged = null
@@ -249,7 +299,10 @@ class T3TerminalView(context: Context, appContext: AppContext) : ExpoView(contex
 
   private fun configureInputView() {
     inputView.onBackspace = {
-      onInput(mapOf("data" to "\u007F"))
+      emitInput("\u007F")
+    }
+    inputView.onSpace = { spaces ->
+      emitInput(spaces)
     }
     inputView.setSingleLine(true)
     inputView.setTextColor(Color.TRANSPARENT)
@@ -274,8 +327,7 @@ class T3TerminalView(context: Context, appContext: AppContext) : ExpoView(contex
         event.action == KeyEvent.ACTION_DOWN
       val isEnter = isImeSend || isHardwareEnter
       if (isEnter) {
-        // Enter must send CR: raw-mode TUIs treat LF as Ctrl+J (insert newline).
-        onInput(mapOf("data" to "\r"))
+        if (isImeSend) emitKey(imeSubmitKey) else emitInput("\r")
         true
       } else {
         false
@@ -285,14 +337,16 @@ class T3TerminalView(context: Context, appContext: AppContext) : ExpoView(contex
       if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
       when {
         keyCode == KeyEvent.KEYCODE_DEL -> {
-          onInput(mapOf("data" to "\u007F"))
+          emitInput("\u007F")
+          true
+        }
+        keyCode == KeyEvent.KEYCODE_SPACE -> {
+          emitInput(" ")
           true
         }
         // Hardware keyboard Ctrl+A..Z -> control bytes 0x01..0x1A (Ctrl+C, Ctrl+Z, ...).
         event.isCtrlPressed && keyCode in KeyEvent.KEYCODE_A..KeyEvent.KEYCODE_Z -> {
-          onInput(
-            mapOf("data" to (keyCode - KeyEvent.KEYCODE_A + 1).toChar().toString()),
-          )
+          emitInput((keyCode - KeyEvent.KEYCODE_A + 1).toChar().toString())
           true
         }
         else -> false
@@ -308,10 +362,12 @@ class T3TerminalView(context: Context, appContext: AppContext) : ExpoView(contex
           if (start >= end) return
           val insertedText = s.subSequence(start, end).toString()
           if (insertedText.isNotEmpty()) {
-            // Samsung Keyboard can commit LF as ordinary text instead of
-            // invoking IME_ACTION_SEND. Raw-mode TUIs need CR for Enter;
-            // LF is Ctrl+J and only inserts a newline into the prompt.
-            onInput(mapOf("data" to normalizeTerminalInput(insertedText)))
+            val imeInput = classifyTerminalImeInput(insertedText)
+            if (imeInput.submit) {
+              emitSubmit(imeInput.data, imeSubmitKey)
+            } else if (imeInput.data.isNotEmpty()) {
+              emitInput(imeInput.data)
+            }
           }
         }
 
@@ -417,14 +473,24 @@ class T3TerminalView(context: Context, appContext: AppContext) : ExpoView(contex
 
   private fun renderSnapshot() {
     if (terminalHandle == 0L) return
-    TerminalFrame.decode(
-      GhosttyBridge.nativeSnapshot(terminalHandle)
-    )?.let(terminalCanvas::setFrame)
+    TerminalFrame.decode(GhosttyBridge.nativeSnapshot(terminalHandle))?.let(terminalCanvas::setFrame)
+  }
+
+  private fun emitInput(data: String) {
+    onInput(mapOf("data" to data))
+  }
+
+  private fun emitKey(key: TerminalImeSubmitKey) {
+    onInput(mapOf("key" to key.eventName))
+  }
+
+  private fun emitSubmit(data: String, key: TerminalImeSubmitKey) {
+    onInput(mapOf("data" to data, "key" to key.eventName))
   }
 
   private fun emitResponse(response: ByteArray) {
     if (response.isNotEmpty()) {
-      onInput(mapOf("data" to String(response, Charsets.UTF_8)))
+      emitInput(String(response, Charsets.UTF_8))
     }
   }
 

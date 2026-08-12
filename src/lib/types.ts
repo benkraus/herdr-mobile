@@ -85,6 +85,9 @@ export type ActionResponse =
       cancelled?: boolean;
     };
 
+export type TerminalSubmitKey = "Enter" | "Tab";
+export type TerminalKey = TerminalSubmitKey | "Backspace";
+
 export interface ReplyRequest {
   text: string;
   requestId: string;

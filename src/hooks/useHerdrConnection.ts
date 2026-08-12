@@ -10,8 +10,10 @@ import {
 import { normalizeBaseUrl } from "../lib/model";
 import { parseConnection } from "../lib/connectionConfig";
 import { loadConnection, saveConnection } from "../lib/storage";
+import { terminalKeyInputData, terminalKeyNeedsInputSettle } from "../lib/terminalKeys";
 import {
   HerdrHttpTransport,
+  isUnsupportedTerminalSubmitError,
   isUnknownSessionError,
   type HerdrLiveEvent,
   type HerdrLiveSubscription,
@@ -27,6 +29,8 @@ import type {
   PaneReadResponse,
   SnapshotResponse,
   TabCreateResponse,
+  TerminalKey,
+  TerminalSubmitKey,
   UploadImageRequest,
   UploadImageResponse,
   WorkspaceFileResponse,
@@ -49,6 +53,11 @@ const emptySnapshot: SnapshotResponse = {
 
 const envUrl = process.env.EXPO_PUBLIC_HERDR_URL?.trim() ?? "";
 const envDemo = process.env.EXPO_PUBLIC_HERDR_DEMO === "1";
+const TERMINAL_INPUT_SETTLE_MS = 350;
+
+function waitForTerminalInputSettle(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, TERMINAL_INPUT_SETTLE_MS));
+}
 
 function freshDemoOutputs(): Record<string, PaneReadResponse> {
   return Object.fromEntries(
@@ -486,6 +495,122 @@ export function useHerdrConnection() {
           return { ok: false as const, error: "Terminal input cancelled.", cancelled: true };
         }
         return requestedTransport.input(paneId, data);
+      });
+      inputQueue.current = operation.then(
+        () => undefined,
+        () => undefined,
+      );
+      return operation;
+    },
+    [mode, transport],
+  );
+
+  const sendKey = useCallback(
+    (paneId: string, key: TerminalKey): Promise<ActionResponse> => {
+      if (mode === "demo") {
+        const current = demoOutputs.current[paneId];
+        if (!current) return Promise.resolve({ ok: false, error: "Demo pane not found." });
+        demoOutputs.current[paneId] = {
+          ...current,
+          revision: current.revision + 1,
+          text: current.text + terminalKeyInputData(key),
+        };
+        return Promise.resolve({ ok: true });
+      }
+      const requestedTransport = transport;
+      if (!requestedTransport) {
+        return Promise.reject(new Error("Connect to a Herdr bridge first."));
+      }
+      const operation = inputQueue.current.then(async () => {
+        if (activeTransport.current !== requestedTransport) {
+          return { ok: false as const, error: "Terminal input cancelled.", cancelled: true };
+        }
+        if (terminalKeyNeedsInputSettle(key)) {
+          await waitForTerminalInputSettle();
+          if (activeTransport.current !== requestedTransport) {
+            return { ok: false as const, error: "Terminal input cancelled.", cancelled: true };
+          }
+        }
+        return requestedTransport.key(paneId, key);
+      });
+      inputQueue.current = operation.then(
+        () => undefined,
+        () => undefined,
+      );
+      return operation;
+    },
+    [mode, transport],
+  );
+
+  const sendInputThenKey = useCallback(
+    (paneId: string, data: string, key: TerminalSubmitKey): Promise<ActionResponse> => {
+      if (mode === "demo") {
+        const current = demoOutputs.current[paneId];
+        if (!current) return Promise.resolve({ ok: false, error: "Demo pane not found." });
+        demoOutputs.current[paneId] = {
+          ...current,
+          revision: current.revision + 1,
+          text: current.text + data + terminalKeyInputData(key),
+        };
+        return Promise.resolve({ ok: true });
+      }
+      const requestedTransport = transport;
+      if (!requestedTransport) {
+        return Promise.reject(new Error("Connect to a Herdr bridge first."));
+      }
+      const operation = inputQueue.current.then(async () => {
+        if (activeTransport.current !== requestedTransport) {
+          return { ok: false as const, error: "Terminal input cancelled.", cancelled: true };
+        }
+        try {
+          return await requestedTransport.submit(paneId, data, key);
+        } catch (reason) {
+          if (!isUnsupportedTerminalSubmitError(reason)) throw reason;
+        }
+
+        // Compatibility for independently deployed relays that predate atomic /submit. New relays
+        // never enter this branch; keep the legacy split guarded against partial delivery.
+        let textDelivered = false;
+        if (data.length > 0) {
+          const inputResult = await requestedTransport.input(paneId, data);
+          if (!inputResult.ok) return inputResult;
+          textDelivered = true;
+          if (activeTransport.current !== requestedTransport) {
+            return {
+              ok: false as const,
+              error:
+                "Terminal text was delivered, but submission was cancelled. Check the previous pane before resending.",
+              cancelled: true,
+              textDelivered: true,
+            };
+          }
+        }
+        await waitForTerminalInputSettle();
+        if (activeTransport.current !== requestedTransport) {
+          return {
+            ok: false as const,
+            error: textDelivered
+              ? "Terminal text was delivered, but submission was cancelled. Check the previous pane before resending."
+              : "Terminal input cancelled.",
+            cancelled: true,
+            ...(textDelivered ? { textDelivered: true } : {}),
+          };
+        }
+        try {
+          const keyResult = await requestedTransport.key(paneId, key);
+          return !keyResult.ok && textDelivered
+            ? { ...keyResult, textDelivered: true }
+            : keyResult;
+        } catch (reason) {
+          if (!textDelivered) throw reason;
+          return {
+            ok: false as const,
+            error:
+              reason instanceof Error ? reason.message : "Terminal submit key could not be sent.",
+            textDelivered: true,
+            deliveryAmbiguous: true,
+          };
+        }
       });
       inputQueue.current = operation.then(
         () => undefined,
@@ -1073,6 +1198,8 @@ export function useHerdrConnection() {
     readWorkspaceGitDiff,
     sendReply,
     sendInput,
+    sendKey,
+    sendInputThenKey,
     uploadImage,
     focusPane,
     scrollPane,

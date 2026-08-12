@@ -21,6 +21,7 @@ import { GlassSafeAreaView } from "../../components/GlassSafeAreaView";
 import { LoadingStrip } from "../../components/LoadingStrip";
 import { StatusPill } from "../../components/StatusPill";
 import { TerminalSurface } from "../terminal/NativeTerminalSurface";
+import { terminalSubmitKeyForAgent } from "../terminal/terminalSubmitKey";
 import { useHerdrConnection, usePaneOutput } from "../../hooks/useHerdrConnection";
 import { pickComposerImages } from "../../lib/composerImages";
 import {
@@ -1481,6 +1482,7 @@ export function HerdrApp() {
                 buffer={presentedOutput?.text ?? ""}
                 fontSize={11}
                 isRunning={canWrite}
+                androidImeSubmitKey={terminalSubmitKeyForAgent(selectedPane)}
                 autoFocus={false}
                 style={{ flex: 1 }}
                 onInput={(data) => {
@@ -1489,6 +1491,34 @@ export function HerdrApp() {
                     .sendInput(selectedPane.paneId, data)
                     .then((result) => {
                       if (!result.ok && !result.cancelled) setTerminalError(result.error);
+                    })
+                    .catch((reason: unknown) => {
+                      setTerminalError(
+                        reason instanceof Error ? reason.message : "Terminal input failed.",
+                      );
+                    });
+                }}
+                onKey={(key) => {
+                  setTerminalError(null);
+                  void herdr
+                    .sendKey(selectedPane.paneId, key)
+                    .then((result) => {
+                      if (!result.ok && !result.cancelled) setTerminalError(result.error);
+                    })
+                    .catch((reason: unknown) => {
+                      setTerminalError(
+                        reason instanceof Error ? reason.message : "Terminal input failed.",
+                      );
+                    });
+                }}
+                onSubmit={(data, key) => {
+                  setTerminalError(null);
+                  void herdr
+                    .sendInputThenKey(selectedPane.paneId, data, key)
+                    .then((result) => {
+                      if (!result.ok && (!result.cancelled || result.textDelivered)) {
+                        setTerminalError(result.error);
+                      }
                     })
                     .catch((reason: unknown) => {
                       setTerminalError(

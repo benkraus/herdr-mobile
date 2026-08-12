@@ -9,6 +9,8 @@ import type {
   ReplyRequest,
   SnapshotResponse,
   TabCreateResponse,
+  TerminalKey,
+  TerminalSubmitKey,
   UploadImageRequest,
   UploadImageResponse,
   WorkspaceFileResponse,
@@ -349,6 +351,13 @@ export interface HerdrTransport {
     signal?: AbortSignal,
   ): Promise<UploadImageResponse>;
   input(paneId: string, data: string, signal?: AbortSignal): Promise<ActionResponse>;
+  key(paneId: string, key: TerminalKey, signal?: AbortSignal): Promise<ActionResponse>;
+  submit(
+    paneId: string,
+    data: string,
+    key: TerminalSubmitKey,
+    signal?: AbortSignal,
+  ): Promise<ActionResponse>;
   focusPane(paneId: string, signal?: AbortSignal): Promise<ActionResponse>;
   createTab(request: CreateTabRequest, signal?: AbortSignal): Promise<TabCreateResponse>;
   createWorkspace(
@@ -526,6 +535,10 @@ export function isUnknownSessionError(error: unknown, session: string): boolean 
   }
 }
 
+export function isUnsupportedTerminalSubmitError(error: unknown): boolean {
+  return error instanceof HerdrHttpError && (error.status === 404 || error.status === 405);
+}
+
 function timedSignal(
   signal: AbortSignal | undefined,
   timeoutMs: number,
@@ -619,15 +632,32 @@ export class HerdrHttpTransport implements HerdrTransport {
 
   input(paneId: string, data: string, signal?: AbortSignal): Promise<ActionResponse> {
     if (data === "\u007F") {
-      return this.request(
-        "/api/pane/" + encodeURIComponent(paneId) + "/keys",
-        { method: "POST", body: JSON.stringify({ keys: ["Backspace"] }), signal },
-        decodeAction,
-      );
+      return this.key(paneId, "Backspace", signal);
     }
     return this.request(
       "/api/pane/" + encodeURIComponent(paneId) + "/input",
       { method: "POST", body: JSON.stringify({ data }), signal },
+      decodeAction,
+    );
+  }
+
+  key(paneId: string, key: TerminalKey, signal?: AbortSignal): Promise<ActionResponse> {
+    return this.request(
+      "/api/pane/" + encodeURIComponent(paneId) + "/keys",
+      { method: "POST", body: JSON.stringify({ keys: [key] }), signal },
+      decodeAction,
+    );
+  }
+
+  submit(
+    paneId: string,
+    data: string,
+    key: TerminalSubmitKey,
+    signal?: AbortSignal,
+  ): Promise<ActionResponse> {
+    return this.request(
+      "/api/pane/" + encodeURIComponent(paneId) + "/submit",
+      { method: "POST", body: JSON.stringify({ data, key }), signal },
       decodeAction,
     );
   }
