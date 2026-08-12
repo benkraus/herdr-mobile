@@ -123,6 +123,7 @@ packageExtensions:
       vite: "catalog:"
 
 patchedDependencies:
+  react-native@0.85.3: patches/react-native@0.85.3.patch
   "@effect/platform-node@4.0.0-beta.102": patches/@effect__platform-node@4.0.0-beta.102.patch
   "@effect/vitest@4.0.0-beta.102": patches/@effect__vitest@4.0.0-beta.102.patch
   "@expo/metro-config@56.0.14": patches/@expo%2Fmetro-config@56.0.14.patch
