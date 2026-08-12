@@ -1,7 +1,7 @@
-diff --git "a/C:\\Users\\microck\\AppData\\Local\\Temp\\rn-codegen-pr-patch\\orig\\scripts\\codegen\\generate-artifacts-executor\\generateRCTThirdPartyComponents.js" "b/C:\\Users\\microck\\AppData\\Local\\Temp\\rn-codegen-pr-patch\\patched\\scripts\\codegen\\generate-artifacts-executor\\generateRCTThirdPartyComponents.js"
+diff --git a/scripts/codegen/generate-artifacts-executor/generateRCTThirdPartyComponents.js b/scripts/codegen/generate-artifacts-executor/generateRCTThirdPartyComponents.js
 index 1bbfd76..95f3ec7 100644
---- "a/C:\\Users\\microck\\AppData\\Local\\Temp\\rn-codegen-pr-patch\\orig\\scripts\\codegen\\generate-artifacts-executor\\generateRCTThirdPartyComponents.js"
-+++ "b/C:\\Users\\microck\\AppData\\Local\\Temp\\rn-codegen-pr-patch\\patched\\scripts\\codegen\\generate-artifacts-executor\\generateRCTThirdPartyComponents.js"
+--- a/scripts/codegen/generate-artifacts-executor/generateRCTThirdPartyComponents.js
++++ b/scripts/codegen/generate-artifacts-executor/generateRCTThirdPartyComponents.js
 @@ -139,7 +139,7 @@ function generateRCTThirdPartyComponents(
      .flatMap(library => {
        const components = componentsInLibraries[library];
@@ -11,10 +11,10 @@ index 1bbfd76..95f3ec7 100644
        });
      })
      .join('\n');
-diff --git "a/C:\\Users\\microck\\AppData\\Local\\Temp\\rn-codegen-pr-patch\\orig\\scripts\\codegen\\templates\\RCTThirdPartyComponentsProviderMM.template" "b/C:\\Users\\microck\\AppData\\Local\\Temp\\rn-codegen-pr-patch\\patched\\scripts\\codegen\\templates\\RCTThirdPartyComponentsProviderMM.template"
+diff --git a/scripts/codegen/templates/RCTThirdPartyComponentsProviderMM.template b/scripts/codegen/templates/RCTThirdPartyComponentsProviderMM.template
 index 4ce5107..702537e 100644
---- "a/C:\\Users\\microck\\AppData\\Local\\Temp\\rn-codegen-pr-patch\\orig\\scripts\\codegen\\templates\\RCTThirdPartyComponentsProviderMM.template"
-+++ "b/C:\\Users\\microck\\AppData\\Local\\Temp\\rn-codegen-pr-patch\\patched\\scripts\\codegen\\templates\\RCTThirdPartyComponentsProviderMM.template"
+--- a/scripts/codegen/templates/RCTThirdPartyComponentsProviderMM.template
++++ b/scripts/codegen/templates/RCTThirdPartyComponentsProviderMM.template
 @@ -19,9 +19,10 @@
    static dispatch_once_t nativeComponentsToken;
  
