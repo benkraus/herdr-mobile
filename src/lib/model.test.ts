@@ -14,6 +14,17 @@ describe("Herdr navigation model", () => {
     ]);
   });
 
+  it("preserves Herdr's tab array order instead of sorting by public number", () => {
+    const first = { ...demoSnapshot.tabs[1]!, number: 32 };
+    const second = { ...demoSnapshot.tabs[0]!, number: 17 };
+    const snapshot = { ...demoSnapshot, tabs: [first, second] };
+
+    expect(tabsForSpace(snapshot, "w1").map((tab) => tab.tabId)).toEqual([
+      first.tabId,
+      second.tabId,
+    ]);
+  });
+
   it("chooses the agent-bearing pane for a tab", () => {
     expect(paneForTab(demoSnapshot, "w1:t1")?.agent).toBe("codex");
   });

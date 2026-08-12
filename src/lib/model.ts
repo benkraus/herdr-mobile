@@ -16,9 +16,9 @@ export function panesForSpace(snapshot: SnapshotResponse, workspaceId: string): 
 }
 
 export function tabsForSpace(snapshot: SnapshotResponse, workspaceId: string): TabView[] {
-  return snapshot.tabs
-    .filter((tab) => tab.workspaceId === workspaceId)
-    .sort((left, right) => left.number - right.number);
+  // Herdr's tabs array is already in the TUI's authoritative order. `number` is a stable public
+  // identifier and does not change when a tab is moved, so sorting by it would undo TUI moves.
+  return snapshot.tabs.filter((tab) => tab.workspaceId === workspaceId);
 }
 
 /** Match Herdr's navigator: linked checkouts live beneath their repository's main workspace. */
