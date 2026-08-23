@@ -87,6 +87,13 @@ export type ActionResponse =
 
 export type TerminalSubmitKey = "Enter" | "Tab";
 export type TerminalKey = TerminalSubmitKey | "Backspace";
+export type TerminalSemanticBaseKey = "esc" | "tab" | "left" | "down" | "up" | "right";
+export type TerminalSemanticKey =
+  | TerminalSemanticBaseKey
+  | "ctrl+c"
+  | "shift+tab"
+  | `${"ctrl" | "alt"}+${TerminalSemanticBaseKey}`;
+export type HerdrTerminalKey = TerminalKey | TerminalSemanticKey;
 
 export interface ReplyRequest {
   text: string;

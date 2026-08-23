@@ -5,11 +5,11 @@ import type {
   CreateTabRequest,
   CreateWorkspaceRequest,
   CreateWorktreeRequest,
+  HerdrTerminalKey,
   PaneReadResponse,
   ReplyRequest,
   SnapshotResponse,
   TabCreateResponse,
-  TerminalKey,
   TerminalSubmitKey,
   UploadImageRequest,
   UploadImageResponse,
@@ -351,7 +351,7 @@ export interface HerdrTransport {
     signal?: AbortSignal,
   ): Promise<UploadImageResponse>;
   input(paneId: string, data: string, signal?: AbortSignal): Promise<ActionResponse>;
-  key(paneId: string, key: TerminalKey, signal?: AbortSignal): Promise<ActionResponse>;
+  key(paneId: string, key: HerdrTerminalKey, signal?: AbortSignal): Promise<ActionResponse>;
   submit(
     paneId: string,
     data: string,
@@ -641,7 +641,7 @@ export class HerdrHttpTransport implements HerdrTransport {
     );
   }
 
-  key(paneId: string, key: TerminalKey, signal?: AbortSignal): Promise<ActionResponse> {
+  key(paneId: string, key: HerdrTerminalKey, signal?: AbortSignal): Promise<ActionResponse> {
     return this.request(
       "/api/pane/" + encodeURIComponent(paneId) + "/keys",
       { method: "POST", body: JSON.stringify({ keys: [key] }), signal },

@@ -26,10 +26,10 @@ import type {
   CreateTabRequest,
   CreateWorkspaceRequest,
   CreateWorktreeRequest,
+  HerdrTerminalKey,
   PaneReadResponse,
   SnapshotResponse,
   TabCreateResponse,
-  TerminalKey,
   TerminalSubmitKey,
   UploadImageRequest,
   UploadImageResponse,
@@ -506,7 +506,7 @@ export function useHerdrConnection() {
   );
 
   const sendKey = useCallback(
-    (paneId: string, key: TerminalKey): Promise<ActionResponse> => {
+    (paneId: string, key: HerdrTerminalKey): Promise<ActionResponse> => {
       if (mode === "demo") {
         const current = demoOutputs.current[paneId];
         if (!current) return Promise.resolve({ ok: false, error: "Demo pane not found." });

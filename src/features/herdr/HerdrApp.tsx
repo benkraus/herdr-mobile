@@ -10,7 +10,11 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { KeyboardAvoidingView } from "react-native-keyboard-controller";
+import {
+  KeyboardAvoidingView,
+  KeyboardController,
+  useKeyboardState,
+} from "react-native-keyboard-controller";
 
 import { AppText as Text, AppTextInput } from "../../components/AppText";
 import { SymbolView } from "../../components/AppSymbol";
@@ -19,11 +23,17 @@ import { ErrorBanner } from "../../components/ErrorBanner";
 import { showConfirmDialog } from "../../components/ConfirmDialogHost";
 import { GlassSafeAreaView } from "../../components/GlassSafeAreaView";
 import { LoadingStrip } from "../../components/LoadingStrip";
-import { StatusPill } from "../../components/StatusPill";
 import { TerminalSurface } from "../terminal/NativeTerminalSurface";
+import { TerminalKeyboardAccessory } from "../terminal/TerminalKeyboardAccessory";
+import {
+  applyTerminalModifier,
+  resolveTerminalAccessoryInput,
+  resolveTerminalAccessorySemanticKey,
+  type TerminalAccessoryAction,
+  type TerminalModifier,
+} from "../terminal/terminalAccessory";
 import { terminalSubmitKeyForAgent } from "../terminal/terminalSubmitKey";
 import { useHerdrConnection, usePaneOutput } from "../../hooks/useHerdrConnection";
-import { pickComposerImages } from "../../lib/composerImages";
 import {
   allPanes,
   defaultSpace,
@@ -43,43 +53,18 @@ import type {
 } from "../../lib/types";
 import { useThemeColor } from "../../lib/useThemeColor";
 import { uuidv4 } from "../../lib/uuid";
-import { isHerdrUploadMimeType, stageAndPasteHerdrImages } from "./imageAttachments";
+import { safeBottomInset } from "./bottomInset";
 import { WorkspaceBrowserSheet } from "./WorkspaceBrowserSheet";
 
 const SPLIT_MIN_WIDTH = 760;
 const SIDEBAR_WIDTH = 340;
-const ANDROID_SYSTEM_BAR_FLOOR = 48;
 
-function safeBottomInset(bottom: number): number {
-  return Platform.OS === "android" ? Math.max(bottom, ANDROID_SYSTEM_BAR_FLOOR) : bottom;
-}
-
-const STATUS_TONES: Record<AgentStatus, Parameters<typeof StatusPill>[0]> = {
-  blocked: {
-    label: "Needs input",
-    pillClassName: "bg-amber-500/14",
-    textClassName: "text-amber-700 dark:text-amber-300",
-  },
-  working: {
-    label: "Working",
-    pillClassName: "bg-blue-500/14",
-    textClassName: "text-blue-700 dark:text-blue-300",
-  },
-  done: {
-    label: "Done",
-    pillClassName: "bg-emerald-500/14",
-    textClassName: "text-emerald-700 dark:text-emerald-300",
-  },
-  idle: {
-    label: "Idle",
-    pillClassName: "bg-subtle-strong",
-    textClassName: "text-foreground-secondary",
-  },
-  unknown: {
-    label: "Unknown",
-    pillClassName: "bg-subtle-strong",
-    textClassName: "text-foreground-muted",
-  },
+const STATUS_LABELS: Record<AgentStatus, string> = {
+  blocked: "Needs input",
+  working: "Working",
+  done: "Done",
+  idle: "Idle",
+  unknown: "Unknown",
 };
 
 function mostUrgent(panes: AgentView[]): AgentStatus {
@@ -100,14 +85,8 @@ function statusDotClass(status: AgentStatus): string {
   return "bg-foreground-tertiary";
 }
 
-function displayPane(pane: AgentView | undefined): string {
-  if (!pane || pane.kind === "shell") return "Shell";
-  return pane.agent.charAt(0).toUpperCase() + pane.agent.slice(1);
-}
-
 function Navigator(props: {
   snapshot: ReturnType<typeof useHerdrConnection>["snapshot"];
-  mode: ReturnType<typeof useHerdrConnection>["mode"];
   selectedWorkspaceId?: string;
   selectedPaneId?: string;
   compact: boolean;
@@ -129,7 +108,8 @@ function Navigator(props: {
   const mutedIcon = useThemeColor("--color-icon-muted");
   const panes = allPanes(props.snapshot);
   const groups = groupWorkspaces(props.snapshot);
-  const bottomInset = safeBottomInset(insets.bottom);
+  const keyboardVisible = useKeyboardState((state) => state.isVisible);
+  const bottomInset = safeBottomInset(insets.bottom, Platform.OS, keyboardVisible);
   const [section, setSection] = useState<"spaces" | "agents">("spaces");
 
   const renderWorkspace = (workspace: WorkspaceView, linked: boolean) => {
@@ -340,11 +320,13 @@ function Navigator(props: {
         >
           {props.snapshot.agents.map((agent) => {
             const selected = agent.paneId === props.selectedPaneId;
+            const tabLabel =
+              props.snapshot.tabs.find((tab) => tab.tabId === agent.tabId)?.label ?? "Tab";
             return (
               <Pressable
                 key={agent.paneId}
                 accessibilityRole="button"
-                accessibilityLabel={`${displayPane(agent)} agent in ${agent.workspaceLabel}`}
+                accessibilityLabel={`${tabLabel} tab in ${agent.workspaceLabel}`}
                 accessibilityState={{ selected }}
                 onPress={() => props.onSelectPane(agent.paneId)}
                 className={`min-h-17 flex-row items-center gap-3 rounded-xl px-3 py-2.5 active:opacity-65 ${
@@ -357,12 +339,12 @@ function Navigator(props: {
                 <View className="min-w-0 flex-1">
                   <View className="flex-row items-center gap-2">
                     <Text className="min-w-0 flex-1 text-sm font-t3-extrabold" numberOfLines={1}>
-                      {displayPane(agent)}
+                      {agent.workspaceLabel}
                     </Text>
                     <View className={`h-2 w-2 rounded-full ${statusDotClass(agent.status)}`} />
                   </View>
                   <Text className="mt-0.5 text-3xs text-foreground-muted" numberOfLines={1}>
-                    {agent.workspaceLabel} · {STATUS_TONES[agent.status].label}
+                    {tabLabel} · {STATUS_LABELS[agent.status]}
                   </Text>
                 </View>
               </Pressable>
@@ -378,19 +360,6 @@ function Navigator(props: {
           ) : null}
         </ScrollView>
       )}
-
-      <Pressable
-        accessibilityRole="button"
-        onPress={props.onOpenConnection}
-        className="min-h-16 flex-row items-center gap-3 border-t border-border px-5 active:opacity-65"
-      >
-        <View
-          className={`h-2 w-2 rounded-full ${props.mode === "live" || props.mode === "demo" ? "bg-emerald-500" : "bg-amber-500"}`}
-        />
-        <Text className="flex-1 text-sm font-t3-medium">Connection</Text>
-        <Text className="text-2xs capitalize text-foreground-muted">{props.mode}</Text>
-        <SymbolView name="chevron.right" size={14} tintColor={iconColor} type="monochrome" />
-      </Pressable>
     </View>
   );
 }
@@ -454,7 +423,7 @@ function ConnectionSheet(props: {
     }
   };
 
-  const bottomInset = safeBottomInset(insets.bottom);
+  const bottomInset = safeBottomInset(insets.bottom, Platform.OS, false);
   return (
     <Modal
       visible={props.visible}
@@ -549,7 +518,7 @@ function WorkspaceCreateSheet(props: {
     }
   };
 
-  const bottomInset = safeBottomInset(insets.bottom);
+  const bottomInset = safeBottomInset(insets.bottom, Platform.OS, false);
   return (
     <Modal
       visible={props.visible}
@@ -654,7 +623,7 @@ function WorktreeCreateSheet(props: {
     }
   };
 
-  const bottomInset = safeBottomInset(insets.bottom);
+  const bottomInset = safeBottomInset(insets.bottom, Platform.OS, false);
   return (
     <Modal
       visible={props.workspace !== null}
@@ -750,7 +719,7 @@ function WorktreeRemoveSheet(props: {
     }
   };
 
-  const bottomInset = safeBottomInset(insets.bottom);
+  const bottomInset = safeBottomInset(insets.bottom, Platform.OS, false);
   return (
     <Modal
       visible={props.workspace !== null}
@@ -827,7 +796,7 @@ function TabRenameSheet(props: {
     }
   };
 
-  const bottomInset = safeBottomInset(insets.bottom);
+  const bottomInset = safeBottomInset(insets.bottom, Platform.OS, false);
   return (
     <Modal
       visible={props.tab !== null}
@@ -880,7 +849,8 @@ export function HerdrApp() {
   const { width } = useWindowDimensions();
   const compact = width < SPLIT_MIN_WIDTH;
   const insets = useSafeAreaInsets();
-  const bottomInset = safeBottomInset(insets.bottom);
+  const keyboardVisible = useKeyboardState((state) => state.isVisible);
+  const bottomInset = safeBottomInset(insets.bottom, Platform.OS, keyboardVisible);
   const herdr = useHerdrConnection();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [connectionOpen, setConnectionOpen] = useState(false);
@@ -895,7 +865,10 @@ export function HerdrApp() {
   const [selectedPaneId, setSelectedPaneId] = useState<string>();
   const [terminalSize, setTerminalSize] = useState<{ cols: number; rows: number } | null>(null);
   const [terminalError, setTerminalError] = useState<string | null>(null);
-  const [imageUploadPaneId, setImageUploadPaneId] = useState<string>();
+  const [pendingModifierState, setPendingModifierState] = useState<{
+    readonly paneId?: string;
+    readonly value: TerminalModifier | null;
+  }>({ value: null });
   const terminalOutputCache = useRef(new Map<string, PaneReadResponse>());
   const [presentedTerminal, setPresentedTerminal] = useState<{
     connectionKey: string;
@@ -938,6 +911,10 @@ export function HerdrApp() {
   const canWrite = !readOnly && (herdr.mode === "live" || herdr.mode === "demo");
   const iconColor = useThemeColor("--color-icon");
   const mutedIcon = useThemeColor("--color-icon-muted");
+  const terminalBackground = String(useThemeColor("--color-screen"));
+  const terminalBorder = String(useThemeColor("--color-border"));
+  const pendingModifier =
+    pendingModifierState.paneId === selectedPaneId ? pendingModifierState.value : null;
 
   useEffect(() => {
     if (herdr.mode === "unconfigured") setConnectionOpen(true);
@@ -1011,6 +988,10 @@ export function HerdrApp() {
   );
 
   useEffect(() => setTerminalError(null), [selectedPaneId]);
+
+  useEffect(() => {
+    if (!keyboardVisible) setPendingModifierState({ paneId: selectedPaneId, value: null });
+  }, [keyboardVisible, selectedPaneId]);
 
   const selectPane = useCallback(
     (paneId: string) => {
@@ -1194,54 +1175,69 @@ export function HerdrApp() {
     setRenameTarget(null);
   };
 
-  const attachImages = async () => {
-    if (!selectedPane || !canWrite || imageUploadPaneId) return;
-    const paneId = selectedPane.paneId;
-    setImageUploadPaneId(paneId);
-    setTerminalError(null);
-    try {
-      const selection = await pickComposerImages({ existingCount: 0 });
-      const supported = selection.images.filter((image) => isHerdrUploadMimeType(image.mimeType));
-      const unsupportedCount = selection.images.length - supported.length;
-      if (supported.length === 0) {
-        setTerminalError(
-          selection.error ??
-            (unsupportedCount > 0
-              ? "Herdr supports PNG, JPEG, GIF, and WebP image attachments."
-              : null),
-        );
+  const sendTerminalInput = useCallback(
+    (data: string) => {
+      if (!selectedPane || data.length === 0) return;
+      setTerminalError(null);
+      void herdr
+        .sendInput(selectedPane.paneId, data)
+        .then((result) => {
+          if (!result.ok && !result.cancelled) setTerminalError(result.error);
+        })
+        .catch((reason: unknown) => {
+          setTerminalError(reason instanceof Error ? reason.message : "Terminal input failed.");
+        });
+    },
+    [herdr, selectedPane],
+  );
+
+  const handleTerminalInput = useCallback(
+    (data: string) => {
+      if (data.length === 0) return;
+      if (pendingModifier !== null) {
+        setPendingModifierState({ paneId: selectedPaneId, value: null });
+      }
+      sendTerminalInput(applyTerminalModifier(data, pendingModifier));
+    },
+    [pendingModifier, selectedPaneId, sendTerminalInput],
+  );
+
+  const handleTerminalAccessoryAction = useCallback(
+    (action: TerminalAccessoryAction) => {
+      if (!selectedPane || action.kind === "clear") return;
+      if (action.kind === "modifier") {
+        setPendingModifierState((current) => ({
+          paneId: selectedPane.paneId,
+          value:
+            current.paneId === selectedPane.paneId && current.value === action.modifier
+              ? null
+              : action.modifier,
+        }));
         return;
       }
-      const result = await stageAndPasteHerdrImages({
-        images: supported.map((image) => ({
-          name: image.name,
-          mimeType: image.mimeType,
-          dataUrl: image.dataUrl,
-          uri: image.previewUri,
-        })),
-        upload: (image) => herdr.uploadImage(paneId, image),
-        paste: (remotePaths) => herdr.sendInput(paneId, remotePaths),
-      });
-      if (!result.ok) {
-        setTerminalError(result.error);
+
+      setPendingModifierState({ paneId: selectedPane.paneId, value: null });
+      const semanticKey = resolveTerminalAccessorySemanticKey(action, pendingModifier);
+      if (semanticKey !== null) {
+        setTerminalError(null);
+        void herdr
+          .sendKey(selectedPane.paneId, semanticKey)
+          .then((result) => {
+            if (!result.ok && !result.cancelled) setTerminalError(result.error);
+          })
+          .catch((reason: unknown) => {
+            setTerminalError(reason instanceof Error ? reason.message : "Terminal input failed.");
+          });
         return;
       }
-      if (selection.error || unsupportedCount > 0) {
-        setTerminalError(
-          selection.error ?? "Some images were skipped. Herdr supports PNG, JPEG, GIF, and WebP.",
-        );
-      }
-    } catch (reason) {
-      setTerminalError(reason instanceof Error ? reason.message : "Image attachment failed.");
-    } finally {
-      setImageUploadPaneId(undefined);
-    }
-  };
+      sendTerminalInput(resolveTerminalAccessoryInput(action, pendingModifier));
+    },
+    [herdr, pendingModifier, selectedPane, sendTerminalInput],
+  );
 
   const navigator = (
     <Navigator
       snapshot={herdr.snapshot}
-      mode={herdr.mode}
       selectedWorkspaceId={selectedWorkspaceId}
       selectedPaneId={selectedPaneId}
       compact={compact}
@@ -1444,33 +1440,6 @@ export function HerdrApp() {
 
         {selectedPane ? (
           <View className="min-h-0 flex-1">
-            <View className="flex-row items-center gap-3 px-4 py-3">
-              <View className="h-9 w-9 items-center justify-center rounded-xl bg-subtle-strong">
-                <SymbolView name="terminal" size={17} tintColor={mutedIcon} type="monochrome" />
-              </View>
-              <View className="min-w-0 flex-1">
-                <Text className="text-sm font-t3-extrabold" numberOfLines={1}>
-                  {displayPane(selectedPane)}
-                </Text>
-                <Text className="text-3xs text-foreground-muted" numberOfLines={1}>
-                  Live terminal · {tabs.find((tab) => tab.tabId === selectedPane.tabId)?.label}
-                </Text>
-              </View>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Attach image to terminal"
-                disabled={!canWrite || Boolean(imageUploadPaneId)}
-                onPress={() => void attachImages()}
-                className="h-10 w-10 items-center justify-center rounded-full bg-subtle active:opacity-60 disabled:opacity-35"
-              >
-                {imageUploadPaneId === selectedPane.paneId ? (
-                  <ActivityIndicator size="small" />
-                ) : (
-                  <SymbolView name="photo" size={17} tintColor={iconColor} type="monochrome" />
-                )}
-              </Pressable>
-              <StatusPill {...STATUS_TONES[selectedPane.status]} size="compact" />
-            </View>
             {paneState.error ? (
               <View className="px-4 pb-3">
                 <ErrorBanner message={`Updates paused: ${paneState.error}`} />
@@ -1485,19 +1454,7 @@ export function HerdrApp() {
                 androidImeSubmitKey={terminalSubmitKeyForAgent(selectedPane)}
                 autoFocus={false}
                 style={{ flex: 1 }}
-                onInput={(data) => {
-                  setTerminalError(null);
-                  void herdr
-                    .sendInput(selectedPane.paneId, data)
-                    .then((result) => {
-                      if (!result.ok && !result.cancelled) setTerminalError(result.error);
-                    })
-                    .catch((reason: unknown) => {
-                      setTerminalError(
-                        reason instanceof Error ? reason.message : "Terminal input failed.",
-                      );
-                    });
-                }}
+                onInput={handleTerminalInput}
                 onKey={(key) => {
                   setTerminalError(null);
                   void herdr
@@ -1512,9 +1469,13 @@ export function HerdrApp() {
                     });
                 }}
                 onSubmit={(data, key) => {
+                  const resolvedData = applyTerminalModifier(data, pendingModifier);
+                  if (pendingModifier !== null) {
+                    setPendingModifierState({ paneId: selectedPane.paneId, value: null });
+                  }
                   setTerminalError(null);
                   void herdr
-                    .sendInputThenKey(selectedPane.paneId, data, key)
+                    .sendInputThenKey(selectedPane.paneId, resolvedData, key)
                     .then((result) => {
                       if (!result.ok && (!result.cancelled || result.textDelivered)) {
                         setTerminalError(result.error);
@@ -1543,6 +1504,16 @@ export function HerdrApp() {
                 </View>
               ) : null}
             </View>
+            {keyboardVisible ? (
+              <TerminalKeyboardAccessory
+                backgroundColor={terminalBackground}
+                borderColor={terminalBorder}
+                onAction={handleTerminalAccessoryAction}
+                onDismiss={() => void KeyboardController.dismiss()}
+                pendingModifier={pendingModifier}
+                sticky={false}
+              />
+            ) : null}
           </View>
         ) : (
           <View className="flex-1 items-center justify-center gap-3 px-8 pb-24">
