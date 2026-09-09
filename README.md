@@ -332,3 +332,20 @@ signing directory or uninstall the existing application before installing a diff
 
 MIT. The root [LICENSE](LICENSE) covers the T3 Code-derived mobile foundation. Vendored and adapted
 components retain their own notices and licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+### Tailscale reauthentication and remote SSH
+
+[Herdr issue #3606](https://github.com/herdrdev/herdr/issues/3606) reports that
+`herdr --remote HOST` hides the Tailscale SSH check-mode login URL while waiting for browser
+approval. The reported workaround is to run `ssh HOST`, complete the browser check, and then
+retry Herdr remote attach.
+
+Herdr Mobile uses the HTTP/WebSocket relay through Tailscale Serve, not SSH remote attach.
+The relay does not expose SSH authentication challenges or their login URLs, so the app cannot
+show or complete that SSH check. Fixing the missing SSH prompt requires a change in Herdr.
+
+If Mobile reports an identity rejection, check that Android Tailscale is connected and signed in
+and that the connection uses the relay’s Tailscale Serve URL. The relay owner may need to check
+`COLLIE_TRUSTED_USER` and the trusted proxy configuration. A device authorization rejection means
+read-only access; the owner must authorize the device. Mobile displays guidance for these relay
+errors and does not automatically replay rejected input.

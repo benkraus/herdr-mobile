@@ -30,6 +30,36 @@ afterEach(() => {
 });
 
 describe("HerdrHttpTransport", () => {
+  it.each([
+    ["identity required", "Tailscale is connected and signed in"],
+    ["identity not trusted", "COLLIE_TRUSTED_USER"],
+    ["remote identity not configured", "COLLIE_TRUSTED_USER"],
+    ["device not authorised", "read-only access"],
+  ])("explains relay access rejection: %s", async (detail, guidance) => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(detail, { status: 403 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const transport = new HerdrHttpTransport({ baseUrl: "https://buildbox.example.ts.net" });
+    const error = await transport.input("pane", "hello").catch((reason) => reason);
+    expect(error).toBeInstanceOf(HerdrHttpError);
+    expect(error).toMatchObject({ status: 403, detail });
+    expect(error.message).toContain(guidance);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("decodes JSON access errors without treating other failures as authentication", async () => {
+    const detail = JSON.stringify({ error: "identity required" });
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(new Response(detail, { status: 403 }))
+        .mockResolvedValueOnce(new Response(detail, { status: 500 })),
+    );
+    const transport = new HerdrHttpTransport({ baseUrl: "https://buildbox.example.ts.net" });
+    await expect(transport.snapshot()).rejects.toThrow("Tailscale is connected and signed in");
+    await expect(transport.snapshot()).rejects.toThrow(/^identity required$/);
+  });
+
   it("reports unconfirmed writes without automatically retrying them", async () => {
     const fetchMock = vi.fn().mockRejectedValue(new TypeError("Network request failed"));
     vi.stubGlobal("fetch", fetchMock);

@@ -43,16 +43,29 @@ function invalidResponse(): never {
   throw new Error("Herdr Control returned an incompatible response.");
 }
 
-function bridgeErrorMessage(detail: string, statusText: string): string {
+function bridgeErrorMessage(detail: string, statusText: string, status: number): string {
+  let message = detail.trim() || statusText || "Herdr request failed.";
   try {
     const body = JSON.parse(detail) as unknown;
     if (isRecord(body) && typeof body.error === "string" && body.error.trim()) {
-      return body.error.trim();
+      message = body.error.trim();
     }
   } catch {
     // Plain-text bridge errors are already human-readable.
   }
-  return detail.trim() || statusText || "Herdr request failed.";
+  if (status === 403) {
+    switch (message) {
+      case "identity required":
+        return "The relay could not identify your Tailscale account. Check that Tailscale is connected and signed in, and use the relay’s Tailscale Serve URL. If this persists, check the host’s Tailscale Serve configuration.";
+      case "identity not trusted":
+        return "This Tailscale account is not allowed by the relay. Use the configured account or ask the host owner to update COLLIE_TRUSTED_USER.";
+      case "remote identity not configured":
+        return "The relay has no trusted remote account configured. The host owner must set COLLIE_TRUSTED_USER before remote access is available.";
+      case "device not authorised":
+        return "This device has read-only access. The host owner must authorize this device before you can send input.";
+    }
+  }
+  return message;
 }
 
 function workspaceInspectionQuery(
@@ -997,7 +1010,7 @@ export class HerdrHttpTransport implements HerdrTransport {
         const detail = await response.text().catch(() => response.statusText);
         throw new HerdrHttpError(
           response.status,
-          bridgeErrorMessage(detail, response.statusText),
+          bridgeErrorMessage(detail, response.statusText, response.status),
           detail,
         );
       }
