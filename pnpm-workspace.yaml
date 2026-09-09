@@ -136,6 +136,7 @@ patchedDependencies:
   react-native-keyboard-controller@1.21.13: patches/react-native-keyboard-controller@1.21.13.patch
   react-native-nitro-modules@0.35.9: patches/react-native-nitro-modules@0.35.9.patch
   react-native-screens@4.25.2: patches/react-native-screens@4.25.2.patch
+  react-native-shiki-engine@0.3.12: patches/react-native-shiki-engine@0.3.12.patch
   uniwind@1.7.0: patches/uniwind@1.7.0.patch
 
 peerDependencyRules:
