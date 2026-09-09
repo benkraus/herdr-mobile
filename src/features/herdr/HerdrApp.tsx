@@ -1498,6 +1498,19 @@ export function HerdrApp() {
                   }
                 }}
               />
+              {(herdr.pendingInput[selectedPane.paneId] ?? 0) > 0 ? (
+                <View
+                  accessibilityRole="progressbar"
+                  accessibilityLiveRegion="polite"
+                  pointerEvents="none"
+                  className="absolute right-3 top-2 flex-row items-center gap-2 rounded-full bg-subtle px-3 py-2"
+                >
+                  <ActivityIndicator size="small" />
+                  <Text className="text-xs text-foreground-muted">
+                    Sending terminal input… {herdr.pendingInput[selectedPane.paneId]} pending
+                  </Text>
+                </View>
+              ) : null}
               {paneState.loading && !paneState.output ? (
                 <View pointerEvents="none" className="absolute inset-0 items-center justify-center">
                   <ActivityIndicator />

@@ -256,6 +256,16 @@ The mobile transport consumes the relay’s bounded REST/WebSocket contract:
 The UI treats the relay snapshot as authoritative. Optimistic state makes newly created spaces and
 tabs immediately navigable while a subsequent refresh reconciles with Herdr.
 
+Returning to the foreground immediately reconnects live updates and refreshes the snapshot.
+Connections that never complete their handshake are retried after 10 seconds. Because the current
+relay has no application heartbeat, a watched pane with no stream activity for 30 seconds renews
+its connection to recover a full frame; this also periodically renews healthy but idle terminals.
+Missing frame sequences trigger the same recovery, and late REST reads cannot replace newer frames.
+
+Terminal input displays a pending count until the relay responds. Writes are ordered, and a failed
+write cancels input already queued behind it so a later Enter cannot submit incomplete text. Writes
+are not automatically replayed: if delivery cannot be confirmed, inspect the pane before resending.
+
 ## Security and privacy
 
 - Use a tailnet-only relay; never expose write access through a public Funnel.

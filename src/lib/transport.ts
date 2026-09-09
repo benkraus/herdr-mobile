@@ -424,6 +424,7 @@ export interface TerminalGridSize {
 
 export interface HerdrLiveSubscription {
   close(): void;
+  reconnect(): void;
   watchPane(paneId: string | undefined, size?: TerminalGridSize): void;
   scrollPane(paneId: string, rows: number): void;
 }
@@ -782,68 +783,141 @@ export class HerdrHttpTransport implements HerdrTransport {
   subscribeLive(listener: (event: HerdrLiveEvent) => void): HerdrLiveSubscription {
     let socket: WebSocket | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let watchdog: ReturnType<typeof setTimeout> | null = null;
     let retryIndex = 0;
     let closed = false;
     let watchedPane: string | null = null;
     let watchedSize: TerminalGridSize = { cols: 120, rows: 40 };
+    let frameSeq: number | null = null;
     let pendingScrollRows = 0;
     let scrollTimer: ReturnType<typeof setTimeout> | null = null;
     const retryMs = [500, 1_000, 2_000, 5_000];
-    const sendWatch = () => {
+    const clearWatchdog = () => {
+      if (watchdog) clearTimeout(watchdog);
+      watchdog = null;
+    };
+    const disconnect = () => {
+      clearWatchdog();
+      const previous = socket;
+      socket = null;
+      frameSeq = null;
+      pendingScrollRows = 0;
+      // Ignore delayed native callbacks from a socket that has already been replaced.
+      if (previous) {
+        previous.onopen = previous.onmessage = previous.onerror = previous.onclose = null;
+        previous.close();
+      }
+    };
+    const reportDisconnected = () => {
+      listener({ type: "source_status", live: false });
+      if (watchedPane) {
+        listener({ type: "pane_stream_status", paneId: watchedPane, live: false });
+      }
+    };
+    const retry = () => {
+      if (closed || retryTimer) return;
+      disconnect();
+      reportDisconnected();
+      const delay = retryMs[Math.min(retryIndex++, retryMs.length - 1)]!;
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        connect();
+      }, delay);
+    };
+    const armWatchdog = (timeoutMs: number) => {
+      clearWatchdog();
+      watchdog = setTimeout(retry, timeoutMs);
+    };
+    const send = (message: object) => {
       if (!socket || socket.readyState !== WebSocket.OPEN) return;
-      socket.send(
-        JSON.stringify({
-          type: "watch_pane",
-          paneId: watchedPane,
-          cols: watchedSize.cols,
-          rows: watchedSize.rows,
-        }),
-      );
+      try {
+        socket.send(JSON.stringify(message));
+      } catch {
+        retry();
+      }
+    };
+    const sendWatch = () => {
+      send({
+        type: "watch_pane",
+        paneId: watchedPane,
+        cols: watchedSize.cols,
+        rows: watchedSize.rows,
+      });
     };
     const flushScroll = () => {
       scrollTimer = null;
       const rows = pendingScrollRows;
       pendingScrollRows = 0;
-      if (!socket || socket.readyState !== WebSocket.OPEN || !watchedPane || rows === 0) return;
-      socket.send(
-        JSON.stringify({
-          type: "scroll_pane",
-          paneId: watchedPane,
-          direction: rows > 0 ? "down" : "up",
-          lines: Math.min(Math.abs(rows), 200),
-        }),
-      );
+      if (!watchedPane || rows === 0) return;
+      send({
+        type: "scroll_pane",
+        paneId: watchedPane,
+        direction: rows > 0 ? "down" : "up",
+        lines: Math.min(Math.abs(rows), 200),
+      });
     };
     const connect = () => {
       if (closed) return;
-      socket = new WebSocket(buildLiveUrl(this.baseUrl, this.session));
-      socket.onopen = () => {
-        retryIndex = 0;
+      let current: WebSocket;
+      try {
+        current = new WebSocket(buildLiveUrl(this.baseUrl, this.session));
+      } catch {
+        retry();
+        return;
+      }
+      socket = current;
+      // A CONNECTING socket need not emit an error/close when a mobile network disappears.
+      armWatchdog(10_000);
+      current.onopen = () => {
+        if (socket !== current || closed) return;
         sendWatch();
       };
-      socket.onmessage = (message) => {
+      current.onmessage = (message) => {
+        if (socket !== current || closed) return;
         const event = decodeLiveEvent(message.data);
-        if (event) listener(event);
-      };
-      socket.onerror = () => {
-        // onclose owns reconnect scheduling; React Native reports both for transport failures.
-      };
-      socket.onclose = () => {
-        socket = null;
-        listener({ type: "source_status", live: false });
-        if (watchedPane) {
-          listener({ type: "pane_stream_status", paneId: watchedPane, live: false });
+        if (!event) return;
+        retryIndex = 0;
+        // Older relays have no application heartbeat. Renew a quiet connection periodically to
+        // obtain an authoritative snapshot/full frame, even if the OS never reports it closed.
+        if (
+          !watchedPane ||
+          event.type === "connected" ||
+          ("paneId" in event &&
+            event.paneId === watchedPane &&
+            (event.type === "pane_frame" || event.type === "pane_stream_status"))
+        ) {
+          armWatchdog(30_000);
         }
-        if (closed) return;
-        const delay = retryMs[Math.min(retryIndex, retryMs.length - 1)]!;
-        retryIndex += 1;
-        retryTimer = setTimeout(connect, delay);
+        if (event.type === "pane_frame") {
+          if (event.paneId !== watchedPane) return;
+          if (!event.full && (frameSeq === null || event.seq !== frameSeq + 1)) {
+            retry();
+            return;
+          }
+          frameSeq = event.seq;
+        }
+        listener(event);
+      };
+      current.onerror = current.onclose = () => {
+        if (socket === current && !closed) retry();
       };
     };
     connect();
     return {
+      reconnect: () => {
+        if (closed) return;
+        if (retryTimer) clearTimeout(retryTimer);
+        retryTimer = null;
+        retryIndex = 0;
+        disconnect();
+        reportDisconnected();
+        connect();
+      },
       watchPane: (paneId, size) => {
-        if (watchedPane !== (paneId ?? null)) pendingScrollRows = 0;
+        if (watchedPane !== (paneId ?? null)) {
+          pendingScrollRows = 0;
+          frameSeq = null;
+        }
         watchedPane = paneId ?? null;
         if (size) watchedSize = size;
         sendWatch();
@@ -859,9 +933,7 @@ export class HerdrHttpTransport implements HerdrTransport {
         if (scrollTimer) clearTimeout(scrollTimer);
         retryTimer = null;
         scrollTimer = null;
-        pendingScrollRows = 0;
-        socket?.close();
-        socket = null;
+        disconnect();
       },
     };
   }
@@ -930,6 +1002,15 @@ export class HerdrHttpTransport implements HerdrTransport {
         );
       }
       return decode(await response.json());
+    } catch (reason) {
+      if (method !== "GET" && !(reason instanceof HerdrHttpError)) {
+        throw new Error(
+          "Delivery could not be confirmed. Check the pane before sending again." +
+            (reason instanceof Error ? ` ${reason.message}` : ""),
+          { cause: reason },
+        );
+      }
+      throw reason;
     } finally {
       requestSignal.dispose();
     }
