@@ -30,6 +30,63 @@ afterEach(() => {
 });
 
 describe("HerdrHttpTransport", () => {
+  it.each([
+    ["identity required", "Tailscale is connected and signed in"],
+    ["identity not trusted", "COLLIE_TRUSTED_USER"],
+    ["remote identity not configured", "COLLIE_TRUSTED_USER"],
+    ["device not authorised", "read-only access"],
+  ])("explains relay access rejection: %s", async (detail, guidance) => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(detail, { status: 403 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const transport = new HerdrHttpTransport({ baseUrl: "https://buildbox.example.ts.net" });
+    const error = await transport.input("pane", "hello").catch((reason) => reason);
+    expect(error).toBeInstanceOf(HerdrHttpError);
+    expect(error).toMatchObject({ status: 403, detail });
+    expect(error.message).toContain(guidance);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("decodes JSON access errors without treating other failures as authentication", async () => {
+    const detail = JSON.stringify({ error: "identity required" });
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(new Response(detail, { status: 403 }))
+        .mockResolvedValueOnce(new Response(detail, { status: 500 })),
+    );
+    const transport = new HerdrHttpTransport({ baseUrl: "https://buildbox.example.ts.net" });
+    await expect(transport.snapshot()).rejects.toThrow("Tailscale is connected and signed in");
+    await expect(transport.snapshot()).rejects.toThrow(/^identity required$/);
+  });
+
+  it("reports unconfirmed writes without automatically retrying them", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError("Network request failed"));
+    vi.stubGlobal("fetch", fetchMock);
+    const transport = new HerdrHttpTransport({ baseUrl: "https://buildbox.example.ts.net" });
+    await expect(transport.submit("pane", "continue", "Enter")).rejects.toThrow(
+      /Delivery could not be confirmed.*Check the pane/,
+    );
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("releases pending writes when their acknowledgment times out", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockImplementation(
+      (_url: URL, init: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const transport = new HerdrHttpTransport({ baseUrl: "https://buildbox.example.ts.net" });
+    const result = transport.input("pane", "hello").catch((reason: Error) => reason);
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(await result).toBeInstanceOf(Error);
+    expect(((await result) as Error).message).toMatch(/Delivery could not be confirmed/);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
   it("uses a session-scoped secure WebSocket for Herdr live events", () => {
     expect(buildLiveUrl("https://buildbox.example.ts.net", "work horse")).toBe(
       "wss://buildbox.example.ts.net/api/live?session=work+horse",
@@ -487,7 +544,8 @@ describe("HerdrHttpTransport", () => {
       vi.fn().mockResolvedValue(
         new Response(
           JSON.stringify({
-            error: "Workspace inspection is unavailable because this space spans multiple Git repositories.",
+            error:
+              "Workspace inspection is unavailable because this space spans multiple Git repositories.",
           }),
           { status: 422 },
         ),
@@ -518,9 +576,9 @@ describe("HerdrHttpTransport", () => {
   });
 
   it("falls back only when the relay lacks the atomic submit route", () => {
-    expect(isUnsupportedTerminalSubmitError(new HerdrHttpError(404, "not found", "not found"))).toBe(
-      true,
-    );
+    expect(
+      isUnsupportedTerminalSubmitError(new HerdrHttpError(404, "not found", "not found")),
+    ).toBe(true);
     expect(
       isUnsupportedTerminalSubmitError(
         new HerdrHttpError(405, "method not allowed", "method not allowed"),

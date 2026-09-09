@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AppState } from "react-native";
+import { TerminalInputQueue } from "../lib/terminalInputQueue";
 import {
   demoPaneById,
   demoSnapshot,
@@ -85,11 +87,12 @@ export function useHerdrConnection() {
   } | null>(null);
   const writeGeneration = useRef(0);
   const writeInFlight = useRef<AbortController | null>(null);
-  const inputQueue = useRef<Promise<void>>(Promise.resolve());
+  const [pendingInput, setPendingInput] = useState<Record<string, number>>({});
   const paneOutputListeners = useRef(new Map<string, Set<(event: PaneLiveUpdate) => void>>());
   const [liveSourceConnected, setLiveSourceConnected] = useState(false);
   const [paneStreamConnected, setPaneStreamConnected] = useState(false);
   const liveSubscription = useRef<HerdrLiveSubscription | null>(null);
+  const watchedPane = useRef<{ paneId: string; size: TerminalGridSize } | null>(null);
   const snapshotRef = useRef(snapshot);
   snapshotRef.current = snapshot;
 
@@ -99,6 +102,14 @@ export function useHerdrConnection() {
   );
   const activeTransport = useRef(transport);
   activeTransport.current = transport;
+  const inputQueue = useMemo(
+    () =>
+      new TerminalInputQueue((pending) => {
+        if (activeTransport.current === transport) setPendingInput(pending);
+      }),
+    [transport],
+  );
+  useEffect(() => setPendingInput({}), [transport]);
   const configGeneration = useRef(0);
   const configWriteChain = useRef<Promise<void>>(Promise.resolve());
 
@@ -240,16 +251,23 @@ export function useHerdrConnection() {
         return;
       }
       if (event.type === "pane_stream_status") {
-        setPaneStreamConnected(event.live);
+        if (event.paneId === watchedPane.current?.paneId && !event.live) {
+          setPaneStreamConnected(false);
+        }
         return;
       }
-      if (event.type === "pane_frame") setPaneStreamConnected(true);
+      if (event.type === "pane_frame" && event.paneId === watchedPane.current?.paneId) {
+        setPaneStreamConnected(true);
+      }
       const listeners = paneOutputListeners.current.get(event.paneId);
       if (listeners && (event.type === "pane_frame" || event.type === "pane_output_changed")) {
         for (const listener of listeners) listener(event);
       }
     });
     liveSubscription.current = subscription;
+    if (watchedPane.current) {
+      subscription.watchPane(watchedPane.current.paneId, watchedPane.current.size);
+    }
     return () => {
       active = false;
       if (liveSubscription.current === subscription) liveSubscription.current = null;
@@ -266,6 +284,22 @@ export function useHerdrConnection() {
     );
     return () => clearInterval(timer);
   }, [liveSourceConnected, mode, ready, refresh, transport]);
+
+  useEffect(() => {
+    let previous = AppState.currentState;
+    const subscription = AppState.addEventListener("change", (next) => {
+      const resumed = next === "active" && previous !== "active";
+      previous = next;
+      if (!resumed) return;
+      // Discard pre-suspension reads, but never replay or cancel an in-flight write here.
+      refreshGeneration.current += 1;
+      refreshInFlight.current?.controller.abort();
+      refreshInFlight.current = null;
+      liveSubscription.current?.reconnect();
+      void refresh();
+    });
+    return () => subscription.remove();
+  }, [refresh]);
 
   const connect = useCallback(
     async (next: ConnectionConfig) => {
@@ -490,19 +524,14 @@ export function useHerdrConnection() {
       if (!requestedTransport) {
         return Promise.reject(new Error("Connect to a Herdr bridge first."));
       }
-      const operation = inputQueue.current.then(async () => {
+      return inputQueue.run(paneId, async () => {
         if (activeTransport.current !== requestedTransport) {
           return { ok: false as const, error: "Terminal input cancelled.", cancelled: true };
         }
         return requestedTransport.input(paneId, data);
       });
-      inputQueue.current = operation.then(
-        () => undefined,
-        () => undefined,
-      );
-      return operation;
     },
-    [mode, transport],
+    [inputQueue, mode, transport],
   );
 
   const sendKey = useCallback(
@@ -521,7 +550,9 @@ export function useHerdrConnection() {
       if (!requestedTransport) {
         return Promise.reject(new Error("Connect to a Herdr bridge first."));
       }
-      const operation = inputQueue.current.then(async () => {
+      const enqueue =
+        key === "Enter" ? inputQueue.submit.bind(inputQueue) : inputQueue.run.bind(inputQueue);
+      return enqueue(paneId, async () => {
         if (activeTransport.current !== requestedTransport) {
           return { ok: false as const, error: "Terminal input cancelled.", cancelled: true };
         }
@@ -533,13 +564,8 @@ export function useHerdrConnection() {
         }
         return requestedTransport.key(paneId, key);
       });
-      inputQueue.current = operation.then(
-        () => undefined,
-        () => undefined,
-      );
-      return operation;
     },
-    [mode, transport],
+    [inputQueue, mode, transport],
   );
 
   const sendInputThenKey = useCallback(
@@ -558,7 +584,7 @@ export function useHerdrConnection() {
       if (!requestedTransport) {
         return Promise.reject(new Error("Connect to a Herdr bridge first."));
       }
-      const operation = inputQueue.current.then(async () => {
+      return inputQueue.submit(paneId, async () => {
         if (activeTransport.current !== requestedTransport) {
           return { ok: false as const, error: "Terminal input cancelled.", cancelled: true };
         }
@@ -598,9 +624,7 @@ export function useHerdrConnection() {
         }
         try {
           const keyResult = await requestedTransport.key(paneId, key);
-          return !keyResult.ok && textDelivered
-            ? { ...keyResult, textDelivered: true }
-            : keyResult;
+          return !keyResult.ok && textDelivered ? { ...keyResult, textDelivered: true } : keyResult;
         } catch (reason) {
           if (!textDelivered) throw reason;
           return {
@@ -612,13 +636,8 @@ export function useHerdrConnection() {
           };
         }
       });
-      inputQueue.current = operation.then(
-        () => undefined,
-        () => undefined,
-      );
-      return operation;
     },
-    [mode, transport],
+    [inputQueue, mode, transport],
   );
 
   const uploadImage = useCallback(
@@ -684,13 +703,17 @@ export function useHerdrConnection() {
       listeners.add(listener);
       paneOutputListeners.current.set(paneId, listeners);
       setPaneStreamConnected(false);
+      watchedPane.current = { paneId, size };
       liveSubscription.current?.watchPane(paneId, size);
       return () => {
         listeners.delete(listener);
         if (listeners.size === 0) {
           paneOutputListeners.current.delete(paneId);
           setPaneStreamConnected(false);
-          liveSubscription.current?.watchPane(undefined);
+          if (watchedPane.current?.paneId === paneId) {
+            watchedPane.current = null;
+            liveSubscription.current?.watchPane(undefined);
+          }
         }
       };
     },
@@ -1198,6 +1221,7 @@ export function useHerdrConnection() {
     readWorkspaceGitDiff,
     sendReply,
     sendInput,
+    pendingInput,
     sendKey,
     sendInputThenKey,
     uploadImage,
@@ -1259,6 +1283,7 @@ export function usePaneOutput(
     let frameTimer: ReturnType<typeof setTimeout> | null = null;
     let pendingFrameText = "";
     let pendingFrameSeq = 0;
+    let frameGeneration = 0;
     const flushFrame = () => {
       frameTimer = null;
       const text = pendingFrameText;
@@ -1276,21 +1301,23 @@ export function usePaneOutput(
       });
     };
     const load = async () => {
+      if (paneStreamConnectedRef.current) return;
       if (inFlight) {
         queued = true;
         return;
       }
       inFlight = true;
+      const requestedFrameGeneration = frameGeneration;
       setLoading(true);
       try {
         const next = await readPane(paneId, controller.signal);
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted || requestedFrameGeneration !== frameGeneration) return;
         if (next.paneId !== paneId)
           throw new Error("Pane response did not match the selected pane.");
         setOutput(next);
         setError(null);
       } catch (reason) {
-        if (!controller.signal.aborted) {
+        if (!controller.signal.aborted && requestedFrameGeneration === frameGeneration) {
           setError(reason instanceof Error ? reason.message : "Pane read failed.");
         }
       } finally {
@@ -1304,6 +1331,7 @@ export function usePaneOutput(
     };
     const unsubscribe = subscribePaneOutput(paneId, terminalSize, (event) => {
       if (event.type === "pane_frame") {
+        frameGeneration += 1;
         paneStreamConnectedRef.current = true;
         if (event.full) {
           if (frameTimer) clearTimeout(frameTimer);
@@ -1325,10 +1353,10 @@ export function usePaneOutput(
         setError(null);
         return;
       }
-      if (eventTimer) return;
+      if (paneStreamConnectedRef.current || eventTimer) return;
       eventTimer = setTimeout(() => {
         eventTimer = null;
-        void load();
+        if (!paneStreamConnectedRef.current) void load();
       }, 32);
     });
     // The native frame stream is authoritative. A bounded REST read only starts if no frame arrives

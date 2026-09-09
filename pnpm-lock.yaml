@@ -99,6 +99,9 @@ patchedDependencies:
   react-native-screens@4.25.2:
     hash: 47a07b0849ebf1ae454be3cb9fde7700c763584afa403d381e11e06e36187de8
     path: patches/react-native-screens@4.25.2.patch
+  react-native-shiki-engine@0.3.12:
+    hash: f693c3537c7ec06fb202d1a3f7e6c6dcd61d6ccad3e85cc6cf1bea17b6c71a74
+    path: patches/react-native-shiki-engine@0.3.12.patch
   uniwind@1.7.0:
     hash: 83d2f46280e7ae73c2d40a697bf7799f7182d49ef131d775d1375b17f45144d6
     path: patches/uniwind@1.7.0.patch
@@ -316,7 +319,7 @@ importers:
         version: 4.25.2(patch_hash=47a07b0849ebf1ae454be3cb9fde7700c763584afa403d381e11e06e36187de8)(react-native@0.85.3(@babel/core@7.29.7)(@react-native/metro-config@0.85.3(@babel/core@7.29.7)(bufferutil@4.1.0))(@types/react@19.2.16)(bufferutil@4.1.0)(react@19.2.3))(react@19.2.3)
       react-native-shiki-engine:
         specifier: ^0.3.12
-        version: 0.3.12(react-native@0.85.3(@babel/core@7.29.7)(@react-native/metro-config@0.85.3(@babel/core@7.29.7)(bufferutil@4.1.0))(@types/react@19.2.16)(bufferutil@4.1.0)(react@19.2.3))(react@19.2.3)
+        version: 0.3.12(patch_hash=f693c3537c7ec06fb202d1a3f7e6c6dcd61d6ccad3e85cc6cf1bea17b6c71a74)(react-native@0.85.3(@babel/core@7.29.7)(@react-native/metro-config@0.85.3(@babel/core@7.29.7)(bufferutil@4.1.0))(@types/react@19.2.16)(bufferutil@4.1.0)(react@19.2.3))(react@19.2.3)
       react-native-svg:
         specifier: 15.15.4
         version: 15.15.4(react-native@0.85.3(@babel/core@7.29.7)(@react-native/metro-config@0.85.3(@babel/core@7.29.7)(bufferutil@4.1.0))(@types/react@19.2.16)(bufferutil@4.1.0)(react@19.2.3))(react@19.2.3)
@@ -348,9 +351,15 @@ importers:
       '@types/react':
         specifier: ~19.2.0
         version: 19.2.16
+      '@types/react-test-renderer':
+        specifier: 19.1.0
+        version: 19.1.0
       babel-preset-expo:
         specifier: ~56.0.0
         version: 56.0.15(@babel/core@7.29.7)(@babel/runtime@7.29.7)(expo-widgets@56.0.19)(expo@56.0.12)(react-refresh@0.14.2)
+      react-test-renderer:
+        specifier: 19.2.3
+        version: 19.2.3(react@19.2.3)
       tailwindcss:
         specifier: ^4.0.0
         version: 4.3.0
@@ -4625,6 +4634,11 @@ packages:
     peerDependenciesMeta:
       '@types/react':
         optional: true
+
+  react-test-renderer@19.2.3:
+    resolution: {integrity: sha512-TMR1LnSFiWZMJkCgNf5ATSvAheTT2NvKIwiVwdBPHxjBI7n/JbWd4gaZ16DVd9foAXdvDz+sB5yxZTwMjPRxpw==}
+    peerDependencies:
+      react: ^19.2.3
 
   react@19.2.3:
     resolution: {integrity: sha512-Ku/hhYbVjOQnXDZFv2+RibmLFGwFdeeKHFcOTlrt7xplBnya5OGn/hIRDsqDiSUcfORsDC7MPxwork8jBwsIWA==}
@@ -9655,7 +9669,7 @@ snapshots:
       react-native: 0.85.3(@babel/core@7.29.7)(@react-native/metro-config@0.85.3(@babel/core@7.29.7)(bufferutil@4.1.0))(@types/react@19.2.16)(bufferutil@4.1.0)(react@19.2.3)
       warn-once: 0.1.1
 
-  react-native-shiki-engine@0.3.12(react-native@0.85.3(@babel/core@7.29.7)(@react-native/metro-config@0.85.3(@babel/core@7.29.7)(bufferutil@4.1.0))(@types/react@19.2.16)(bufferutil@4.1.0)(react@19.2.3))(react@19.2.3):
+  react-native-shiki-engine@0.3.12(patch_hash=f693c3537c7ec06fb202d1a3f7e6c6dcd61d6ccad3e85cc6cf1bea17b6c71a74)(react-native@0.85.3(@babel/core@7.29.7)(@react-native/metro-config@0.85.3(@babel/core@7.29.7)(bufferutil@4.1.0))(@types/react@19.2.16)(bufferutil@4.1.0)(react@19.2.3))(react@19.2.3):
     dependencies:
       '@shikijs/types': 4.3.0
       '@shikijs/vscode-textmate': 10.0.2
@@ -9774,6 +9788,12 @@ snapshots:
       tslib: 2.8.1
     optionalDependencies:
       '@types/react': 19.2.16
+
+  react-test-renderer@19.2.3(react@19.2.3):
+    dependencies:
+      react: 19.2.3
+      react-is: 19.2.7
+      scheduler: 0.27.0
 
   react@19.2.3: {}
 
