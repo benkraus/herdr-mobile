@@ -265,6 +265,8 @@ Missing frame sequences trigger the same recovery, and late REST reads cannot re
 Terminal input displays a pending count until the relay responds. Writes are ordered, and a failed
 write cancels input already queued behind it so a later Enter cannot submit incomplete text. Writes
 are not automatically replayed: if delivery cannot be confirmed, inspect the pane before resending.
+Repeated submit or Enter events share the pending submission, including time spent waiting behind
+typed input, so rapid taps cannot enqueue the same submission multiple times.
 
 ## Security and privacy
 

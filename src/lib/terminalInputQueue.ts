@@ -5,8 +5,18 @@ export class TerminalInputQueue {
   private tail: Promise<void> = Promise.resolve();
   private generation = 0;
   private pending: Record<string, number> = {};
+  private submissions = new Map<string, Promise<ActionResponse>>();
 
   constructor(private readonly onPending: (pending: Record<string, number>) => void) {}
+
+  submit(paneId: string, operation: () => Promise<ActionResponse>): Promise<ActionResponse> {
+    const pending = this.submissions.get(paneId);
+    if (pending) return pending;
+    const result = this.run(paneId, operation).finally(() => this.submissions.delete(paneId));
+    // Claim the submission synchronously, including time spent waiting behind queued keystrokes.
+    this.submissions.set(paneId, result);
+    return result;
+  }
 
   run(paneId: string, operation: () => Promise<ActionResponse>): Promise<ActionResponse> {
     const generation = this.generation;

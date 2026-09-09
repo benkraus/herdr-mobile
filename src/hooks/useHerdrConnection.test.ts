@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   remove: vi.fn(),
   snapshot: vi.fn(),
   input: vi.fn(),
+  submit: vi.fn(),
+  key: vi.fn(),
   reconnect: vi.fn(),
   watchPane: vi.fn(),
   close: vi.fn(),
@@ -32,6 +34,8 @@ vi.mock("../lib/transport", async (importOriginal) => ({
   HerdrHttpTransport: class {
     snapshot = mocks.snapshot;
     input = mocks.input;
+    submit = mocks.submit;
+    key = mocks.key;
     subscribeLive() {
       return {
         reconnect: mocks.reconnect,
@@ -77,6 +81,33 @@ afterEach(async () => {
 });
 
 describe("foreground recovery", () => {
+  it("sends only once for repeated submit and Enter events before acknowledgment", async () => {
+    const current = await mount(useHerdrConnection);
+    let acknowledge!: (value: { ok: true }) => void;
+    mocks.submit.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          acknowledge = resolve;
+        }),
+    );
+    let first!: Promise<unknown>;
+    let repeated!: Promise<unknown>;
+    let enter!: Promise<unknown>;
+    await act(async () => {
+      first = current().sendInputThenKey("pane", "hello", "Enter");
+      repeated = current().sendInputThenKey("pane", "hello", "Enter");
+      enter = current().sendKey("pane", "Enter");
+    });
+    expect(mocks.submit).toHaveBeenCalledOnce();
+    expect(mocks.key).not.toHaveBeenCalled();
+    expect(current().pendingInput).toEqual({ pane: 1 });
+    await act(async () => {
+      acknowledge({ ok: true });
+      await Promise.all([first, repeated, enter]);
+    });
+    expect(current().pendingInput).toEqual({});
+  });
+
   it("isolates pending input when switching connections", async () => {
     const current = await mount(useHerdrConnection);
     let finishOld!: (value: { ok: false; error: string }) => void;

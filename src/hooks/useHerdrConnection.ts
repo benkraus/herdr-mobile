@@ -550,7 +550,9 @@ export function useHerdrConnection() {
       if (!requestedTransport) {
         return Promise.reject(new Error("Connect to a Herdr bridge first."));
       }
-      return inputQueue.run(paneId, async () => {
+      const enqueue =
+        key === "Enter" ? inputQueue.submit.bind(inputQueue) : inputQueue.run.bind(inputQueue);
+      return enqueue(paneId, async () => {
         if (activeTransport.current !== requestedTransport) {
           return { ok: false as const, error: "Terminal input cancelled.", cancelled: true };
         }
@@ -582,7 +584,7 @@ export function useHerdrConnection() {
       if (!requestedTransport) {
         return Promise.reject(new Error("Connect to a Herdr bridge first."));
       }
-      return inputQueue.run(paneId, async () => {
+      return inputQueue.submit(paneId, async () => {
         if (activeTransport.current !== requestedTransport) {
           return { ok: false as const, error: "Terminal input cancelled.", cancelled: true };
         }
