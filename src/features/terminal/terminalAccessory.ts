@@ -1,4 +1,4 @@
-import type { TerminalSemanticBaseKey, TerminalSemanticKey } from "../../lib/types";
+import type { HerdrTerminalKey, TerminalSemanticBaseKey, TerminalSemanticKey } from "../../lib/types";
 
 export type TerminalModifier = "ctrl" | "alt";
 
@@ -38,6 +38,14 @@ export const TERMINAL_ACCESSORY_ACTIONS: ReadonlyArray<TerminalAccessoryAction> 
     label: "⇧ tab",
     accessibilityLabel: "Shift Tab",
     data: "\u001b[Z",
+    appliesModifier: false,
+  },
+  {
+    kind: "send",
+    key: "enter",
+    label: "⏎",
+    accessibilityLabel: "Enter",
+    data: "\r",
     appliesModifier: false,
   },
   { kind: "send", key: "slash", label: "/", accessibilityLabel: "Forward slash", data: "/" },
@@ -112,10 +120,9 @@ export function resolveTerminalAccessoryInput(
     : applyTerminalModifier(action.data, modifier);
 }
 
-const TERMINAL_ACCESSORY_SEMANTIC_KEYS: Partial<
-  Record<string, TerminalSemanticKey>
-> = {
+const TERMINAL_ACCESSORY_SEMANTIC_KEYS: Partial<Record<string, HerdrTerminalKey>> = {
   esc: "esc",
+  enter: "Enter",
   "ctrl-c": "ctrl+c",
   tab: "tab",
   "shift-tab": "shift+tab",
@@ -128,12 +135,12 @@ const TERMINAL_ACCESSORY_SEMANTIC_KEYS: Partial<
 export function resolveTerminalAccessorySemanticKey(
   action: TerminalAccessoryAction,
   modifier: TerminalModifier | null,
-): TerminalSemanticKey | null {
+): HerdrTerminalKey | null {
   if (action.kind !== "send") return null;
 
   const semanticKey = TERMINAL_ACCESSORY_SEMANTIC_KEYS[action.key];
   if (semanticKey === undefined) return null;
   if (modifier === null || action.appliesModifier === false) return semanticKey;
 
-  return `${modifier}+${semanticKey as TerminalSemanticBaseKey}`;
+  return `${modifier}+${semanticKey as TerminalSemanticBaseKey}` satisfies TerminalSemanticKey;
 }

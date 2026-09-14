@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { View } from "react-native";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 
+import { AppTextInput } from "../../components/AppText";
 import {
   ComposerToolbarButton,
   ComposerToolbarRow,
@@ -13,6 +15,7 @@ import {
 } from "./terminalAccessory";
 
 export const TERMINAL_ACCESSORY_HEIGHT = 52;
+export const TERMINAL_COMPOSE_HEIGHT = 56;
 
 export function TerminalKeyboardAccessory(props: {
   readonly backgroundColor: string;
@@ -21,18 +24,45 @@ export function TerminalKeyboardAccessory(props: {
   readonly sticky?: boolean;
   readonly pendingModifier: TerminalModifier | null;
   readonly onAction: (action: TerminalAccessoryAction) => void;
+  readonly onSendText?: (text: string) => void;
   readonly onDismiss: () => void;
 }) {
   const actions = getTerminalAccessoryActions({ includeClear: props.includeClear ?? false });
+  const [draft, setDraft] = useState("");
+  const onSendText = props.onSendText;
   const content = (
     <View
       className="border-t"
       style={{
         backgroundColor: props.backgroundColor,
         borderTopColor: props.borderColor,
-        minHeight: TERMINAL_ACCESSORY_HEIGHT,
+        minHeight: TERMINAL_ACCESSORY_HEIGHT + (onSendText ? TERMINAL_COMPOSE_HEIGHT : 0),
       }}
     >
+      {onSendText ? (
+        <ComposerToolbarRow paddingBottom={0} paddingHorizontal={8} paddingTop={6}>
+          <AppTextInput
+            autoCapitalize="none"
+            className="max-h-24 min-h-11 flex-1 py-2.5"
+            multiline
+            onChangeText={setDraft}
+            placeholder="Type, dictate or paste, then send"
+            value={draft}
+          />
+          <ComposerToolbarButton
+            accessibilityLabel="Send text to terminal"
+            disabled={draft.length === 0}
+            icon="arrow.up"
+            onPress={() => {
+              if (draft.length === 0) return;
+              setDraft("");
+              onSendText(draft);
+            }}
+            showChevron={false}
+            variant="primary"
+          />
+        </ComposerToolbarRow>
+      ) : null}
       <ComposerToolbarRow paddingBottom={4} paddingHorizontal={8} paddingTop={4}>
         <ComposerToolbarScroller
           contentPaddingRight={2}

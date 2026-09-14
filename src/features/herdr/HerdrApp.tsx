@@ -1509,6 +1509,7 @@ export function HerdrApp() {
                 backgroundColor={terminalBackground}
                 borderColor={terminalBorder}
                 onAction={handleTerminalAccessoryAction}
+                onSendText={sendTerminalInput}
                 onDismiss={() => void KeyboardController.dismiss()}
                 pendingModifier={pendingModifier}
                 sticky={false}

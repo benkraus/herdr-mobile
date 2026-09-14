@@ -18,6 +18,7 @@ describe("TERMINAL_ACCESSORY_ACTIONS", () => {
       "alt",
       "tab",
       "shift-tab",
+      "enter",
       "slash",
       "left",
       "down",
@@ -93,6 +94,7 @@ describe("terminal modifiers", () => {
       "shift+tab",
     );
     expect(resolveTerminalAccessorySemanticKey(actions.left!, "alt")).toBe("alt+left");
+    expect(resolveTerminalAccessorySemanticKey(actions.enter!, "ctrl")).toBe("Enter");
     expect(resolveTerminalAccessorySemanticKey(actions.slash!, null)).toBeNull();
   });
 });

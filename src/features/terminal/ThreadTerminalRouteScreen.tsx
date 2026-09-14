@@ -41,6 +41,7 @@ import { TerminalSurface } from "./NativeTerminalSurface";
 import {
   TerminalKeyboardAccessory,
   TERMINAL_ACCESSORY_HEIGHT,
+  TERMINAL_COMPOSE_HEIGHT,
 } from "./TerminalKeyboardAccessory";
 import { getPierreTerminalTheme } from "./terminalTheme";
 import { terminalDebugLog } from "./terminalDebugLog";
@@ -420,7 +421,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
   const isAccessoryVisible = keyboardState.isVisible && !isAccessoryDismissed;
   const terminalBottomInset =
     (keyboardState.isVisible ? keyboardState.height : 0) +
-    (isAccessoryVisible ? TERMINAL_ACCESSORY_HEIGHT : 0);
+    (isAccessoryVisible ? TERMINAL_ACCESSORY_HEIGHT + TERMINAL_COMPOSE_HEIGHT : 0);
 
   useEffect(() => {
     const keyboardWillShow = KeyboardEvents.addListener("keyboardWillShow", () => {
@@ -1144,6 +1145,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
                 borderColor={terminalTheme.border}
                 includeClear
                 onAction={handleToolbarActionPress}
+                onSendText={writeInput}
                 onDismiss={handleDismissKeyboard}
                 pendingModifier={pendingModifier}
               />
