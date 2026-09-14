@@ -24,22 +24,22 @@ export function TerminalKeyboardAccessory(props: {
   readonly sticky?: boolean;
   readonly pendingModifier: TerminalModifier | null;
   readonly onAction: (action: TerminalAccessoryAction) => void;
-  readonly onSendText?: (text: string) => void;
+  readonly onSubmitText?: (text: string) => void;
   readonly onDismiss: () => void;
 }) {
   const actions = getTerminalAccessoryActions({ includeClear: props.includeClear ?? false });
   const [draft, setDraft] = useState("");
-  const onSendText = props.onSendText;
+  const onSubmitText = props.onSubmitText;
   const content = (
     <View
       className="border-t"
       style={{
         backgroundColor: props.backgroundColor,
         borderTopColor: props.borderColor,
-        minHeight: TERMINAL_ACCESSORY_HEIGHT + (onSendText ? TERMINAL_COMPOSE_HEIGHT : 0),
+        minHeight: TERMINAL_ACCESSORY_HEIGHT + (onSubmitText ? TERMINAL_COMPOSE_HEIGHT : 0),
       }}
     >
-      {onSendText ? (
+      {onSubmitText ? (
         <ComposerToolbarRow paddingBottom={0} paddingHorizontal={8} paddingTop={6}>
           <AppTextInput
             autoCapitalize="none"
@@ -50,13 +50,13 @@ export function TerminalKeyboardAccessory(props: {
             value={draft}
           />
           <ComposerToolbarButton
-            accessibilityLabel="Send text to terminal"
+            accessibilityLabel="Send text to the terminal"
             disabled={draft.length === 0}
             icon="arrow.up"
             onPress={() => {
               if (draft.length === 0) return;
               setDraft("");
-              onSendText(draft);
+              onSubmitText(draft);
             }}
             showChevron={false}
             variant="primary"

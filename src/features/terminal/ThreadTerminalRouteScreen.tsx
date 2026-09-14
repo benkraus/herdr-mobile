@@ -1145,7 +1145,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
                 borderColor={terminalTheme.border}
                 includeClear
                 onAction={handleToolbarActionPress}
-                onSendText={writeInput}
+                onSubmitText={(text) => writeInput(`${text}\r`)}
                 onDismiss={handleDismissKeyboard}
                 pendingModifier={pendingModifier}
               />

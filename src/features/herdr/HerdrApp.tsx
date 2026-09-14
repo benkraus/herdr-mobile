@@ -49,6 +49,7 @@ import type {
   ConnectionConfig,
   PaneReadResponse,
   TabView,
+  TerminalSubmitKey,
   WorkspaceView,
 } from "../../lib/types";
 import { useThemeColor } from "../../lib/useThemeColor";
@@ -1191,6 +1192,24 @@ export function HerdrApp() {
     [herdr, selectedPane],
   );
 
+  const submitTerminalInput = useCallback(
+    (data: string, key: TerminalSubmitKey) => {
+      if (!selectedPane) return;
+      setTerminalError(null);
+      void herdr
+        .sendInputThenKey(selectedPane.paneId, data, key)
+        .then((result) => {
+          if (!result.ok && (!result.cancelled || result.textDelivered)) {
+            setTerminalError(result.error);
+          }
+        })
+        .catch((reason: unknown) => {
+          setTerminalError(reason instanceof Error ? reason.message : "Terminal input failed.");
+        });
+    },
+    [herdr, selectedPane],
+  );
+
   const handleTerminalInput = useCallback(
     (data: string) => {
       if (data.length === 0) return;
@@ -1469,23 +1488,10 @@ export function HerdrApp() {
                     });
                 }}
                 onSubmit={(data, key) => {
-                  const resolvedData = applyTerminalModifier(data, pendingModifier);
                   if (pendingModifier !== null) {
                     setPendingModifierState({ paneId: selectedPane.paneId, value: null });
                   }
-                  setTerminalError(null);
-                  void herdr
-                    .sendInputThenKey(selectedPane.paneId, resolvedData, key)
-                    .then((result) => {
-                      if (!result.ok && (!result.cancelled || result.textDelivered)) {
-                        setTerminalError(result.error);
-                      }
-                    })
-                    .catch((reason: unknown) => {
-                      setTerminalError(
-                        reason instanceof Error ? reason.message : "Terminal input failed.",
-                      );
-                    });
+                  submitTerminalInput(applyTerminalModifier(data, pendingModifier), key);
                 }}
                 onResize={(size) => {
                   setTerminalSize((current) =>
@@ -1509,7 +1515,9 @@ export function HerdrApp() {
                 backgroundColor={terminalBackground}
                 borderColor={terminalBorder}
                 onAction={handleTerminalAccessoryAction}
-                onSendText={sendTerminalInput}
+                onSubmitText={(text) =>
+                  submitTerminalInput(text, terminalSubmitKeyForAgent(selectedPane))
+                }
                 onDismiss={() => void KeyboardController.dismiss()}
                 pendingModifier={pendingModifier}
                 sticky={false}
