@@ -117,6 +117,18 @@ private enum TerminalHardwareKeyEncoder {
       return nil
     }
   }
+
+  static func isRepeatable(input: String) -> Bool {
+    switch input {
+    case UIKeyCommand.inputLeftArrow,
+         UIKeyCommand.inputRightArrow,
+         UIKeyCommand.inputUpArrow,
+         UIKeyCommand.inputDownArrow:
+      return true
+    default:
+      return false
+    }
+  }
 }
 
 private enum TerminalInputSequence {
@@ -138,6 +150,9 @@ private final class TerminalInputField: UITextField {
   var onDeleteBackward: (() -> Void)?
   var onInsert: ((String) -> Void)?
 
+  private var keyRepeatTimer: Timer?
+  private var repeatingSequence: String?
+
   private static let hardwareKeyCommands = TerminalHardwareKeyEncoder.makeKeyCommands(
     action: #selector(handleHardwareKeyCommand(_:))
   )
@@ -146,9 +161,42 @@ private final class TerminalInputField: UITextField {
     Self.hardwareKeyCommands
   }
 
+  /// Always reporting `hasText == true` ensures iOS hardware keyboard logic continuously
+  /// delivers repeated `deleteBackward` calls when Backspace is held down. Because the field's
+  /// text is intentionally kept empty, the default `hasText` evaluates to `false` and suppresses
+  /// repeat calls.
+  override var hasText: Bool {
+    true
+  }
+
   override func deleteBackward() {
+    stopKeyRepeat()
     onDeleteBackward?()
     super.deleteBackward()
+  }
+
+  override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+    stopKeyRepeat()
+    super.pressesBegan(presses, with: event)
+  }
+
+  override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+    stopKeyRepeat()
+    super.pressesEnded(presses, with: event)
+  }
+
+  override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+    stopKeyRepeat()
+    super.pressesCancelled(presses, with: event)
+  }
+
+  override func resignFirstResponder() -> Bool {
+    stopKeyRepeat()
+    return super.resignFirstResponder()
+  }
+
+  deinit {
+    stopKeyRepeat()
   }
 
   @objc
@@ -158,7 +206,36 @@ private final class TerminalInputField: UITextField {
       input: input,
       modifiers: command.modifierFlags
     ) else { return }
+
+    stopKeyRepeat()
     onInsert?(sequence)
+
+    if TerminalHardwareKeyEncoder.isRepeatable(input: input) {
+      startKeyRepeat(sequence: sequence)
+    }
+  }
+
+  private func startKeyRepeat(sequence: String) {
+    repeatingSequence = sequence
+    let initialTimer = Timer(timeInterval: 0.35, repeats: false) { [weak self] _ in
+      guard let self, let seq = self.repeatingSequence else { return }
+      self.onInsert?(seq)
+
+      let repeatTimer = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
+        guard let self, let seq = self.repeatingSequence else { return }
+        self.onInsert?(seq)
+      }
+      RunLoop.main.add(repeatTimer, forMode: .common)
+      self.keyRepeatTimer = repeatTimer
+    }
+    RunLoop.main.add(initialTimer, forMode: .common)
+    keyRepeatTimer = initialTimer
+  }
+
+  private func stopKeyRepeat() {
+    keyRepeatTimer?.invalidate()
+    keyRepeatTimer = nil
+    repeatingSequence = nil
   }
 }
 
