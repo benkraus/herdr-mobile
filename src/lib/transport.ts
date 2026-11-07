@@ -364,6 +364,11 @@ export interface HerdrTransport {
     request: CreateWorkspaceRequest,
     signal?: AbortSignal,
   ): Promise<WorkspaceCreateResponse>;
+  renameWorkspace(
+    workspaceId: string,
+    label: string,
+    signal?: AbortSignal,
+  ): Promise<ActionResponse>;
   renameTab(tabId: string, label: string, signal?: AbortSignal): Promise<ActionResponse>;
   closeTab(tabId: string, requestId: string, signal?: AbortSignal): Promise<ActionResponse>;
   closeWorkspace(
@@ -686,6 +691,18 @@ export class HerdrHttpTransport implements HerdrTransport {
       "/api/workspace",
       { method: "POST", body: JSON.stringify(request), signal },
       decodeCreate,
+    );
+  }
+
+  renameWorkspace(
+    workspaceId: string,
+    label: string,
+    signal?: AbortSignal,
+  ): Promise<ActionResponse> {
+    return this.request(
+      "/api/workspace/" + encodeURIComponent(workspaceId),
+      { method: "PATCH", body: JSON.stringify({ label }), signal },
+      decodeAction,
     );
   }
 

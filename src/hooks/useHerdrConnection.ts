@@ -948,6 +948,39 @@ export function useHerdrConnection() {
     [mode, refresh, snapshot.workspaces, transport],
   );
 
+  const renameWorkspace = useCallback(
+    async (workspaceId: string, label: string): Promise<ActionResponse> => {
+      const normalized = label.trim();
+      if (!normalized) return { ok: false, error: "Enter a space name." };
+      if (mode === "demo") {
+        const exists = snapshot.workspaces.some((workspace) => workspace.workspaceId === workspaceId);
+        if (!exists) return { ok: false, error: "Space not found." };
+        setSnapshot((current) => ({
+          ...current,
+          workspaces: current.workspaces.map((workspace) =>
+            workspace.workspaceId === workspaceId ? { ...workspace, label: normalized } : workspace,
+          ),
+          ts: Date.now(),
+        }));
+        return { ok: true };
+      }
+      if (!transport) throw new Error("Connect to a Herdr bridge first.");
+      const result = await transport.renameWorkspace(workspaceId, normalized);
+      if (result.ok) {
+        setSnapshot((current) => ({
+          ...current,
+          workspaces: current.workspaces.map((workspace) =>
+            workspace.workspaceId === workspaceId ? { ...workspace, label: normalized } : workspace,
+          ),
+          ts: Date.now(),
+        }));
+        void refresh();
+      }
+      return result;
+    },
+    [mode, refresh, snapshot.workspaces, transport],
+  );
+
   const renameTab = useCallback(
     async (tabId: string, label: string): Promise<ActionResponse> => {
       const normalized = label.trim();
@@ -1208,6 +1241,7 @@ export function useHerdrConnection() {
     paneStreamConnected,
     createTab,
     createWorkspace,
+    renameWorkspace,
     renameTab,
     createWorktree,
     closeTab,
