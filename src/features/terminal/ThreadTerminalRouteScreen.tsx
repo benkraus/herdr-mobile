@@ -17,6 +17,9 @@ import { ControlPillMenu } from "../../components/ControlPill";
 import { EmptyState } from "../../components/EmptyState";
 import { GlassSurface } from "../../components/GlassSurface";
 import { LoadingScreen } from "../../components/LoadingScreen";
+import { showConfirmDialog } from "../../components/ConfirmDialogHost";
+import * as Clipboard from "expo-clipboard";
+import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { environmentCatalog } from "../../connection/catalog";
 import { useEnvironmentPresentation } from "../../state/presentation";
 import { terminalEnvironment } from "../../state/terminal";
@@ -935,10 +938,69 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
         return;
       }
 
+      if (action.kind === "paste") {
+        void (async () => {
+          try {
+            const text = await Clipboard.getStringAsync();
+            if (text) {
+              handleInput(text);
+            }
+          } catch (error) {
+            console.warn("Failed to paste from clipboard", error);
+          }
+        })();
+        return;
+      }
+
+      if (action.kind === "copy-buffer") {
+        if (terminalSurfaceBuffer) {
+          copyTextWithHaptic(terminalSurfaceBuffer, { target: "terminal-buffer" });
+        }
+        return;
+      }
+
+      if (action.kind === "new-space") {
+        handleOpenNewTerminal();
+        return;
+      }
+
+      if (action.kind === "close-session") {
+        showConfirmDialog({
+          title: "Close terminal?",
+          message: "Are you sure you want to close this terminal session?",
+          confirmText: "Close terminal",
+          destructive: true,
+          onConfirm: () => {
+            if (selectedThread) {
+              void closeTerminal({
+                environmentId: selectedThread.environmentId,
+                input: {
+                  threadId: selectedThread.id,
+                  terminalId,
+                },
+              });
+            }
+            navigateAwayAfterExit();
+          },
+        });
+        return;
+      }
+
       setPendingModifierState({ terminalId, value: null });
       writeInput(resolveTerminalAccessoryInput(action, pendingModifier));
     },
-    [handleClearTerminal, pendingModifier, terminalId, writeInput],
+    [
+      closeTerminal,
+      handleClearTerminal,
+      handleInput,
+      handleOpenNewTerminal,
+      navigateAwayAfterExit,
+      pendingModifier,
+      selectedThread,
+      terminalId,
+      terminalSurfaceBuffer,
+      writeInput,
+    ],
   );
 
   const handleDismissKeyboard = useCallback(() => {

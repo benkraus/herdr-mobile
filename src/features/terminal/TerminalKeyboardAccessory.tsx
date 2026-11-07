@@ -18,12 +18,18 @@ export function TerminalKeyboardAccessory(props: {
   readonly backgroundColor: string;
   readonly borderColor: string;
   readonly includeClear?: boolean;
+  readonly includeNewSpace?: boolean;
+  readonly includeCloseSession?: boolean;
   readonly sticky?: boolean;
   readonly pendingModifier: TerminalModifier | null;
   readonly onAction: (action: TerminalAccessoryAction) => void;
   readonly onDismiss: () => void;
 }) {
-  const actions = getTerminalAccessoryActions({ includeClear: props.includeClear ?? false });
+  const actions = getTerminalAccessoryActions({
+    includeClear: props.includeClear ?? false,
+    includeNewSpace: props.includeNewSpace ?? true,
+    includeCloseSession: props.includeCloseSession ?? true,
+  });
   const content = (
     <View
       className="border-t"
@@ -42,13 +48,15 @@ export function TerminalKeyboardAccessory(props: {
           {actions.map((action) => {
             const active =
               action.kind === "modifier" && props.pendingModifier === action.modifier;
+            const variant = action.kind === "close-session" ? "danger" : "default";
 
             return (
               <ComposerToolbarButton
                 key={action.key}
                 active={active}
+                variant={variant}
                 accessibilityLabel={
-                  action.kind === "send" ? action.accessibilityLabel : undefined
+                  action.kind !== "modifier" ? action.accessibilityLabel : undefined
                 }
                 label={action.label}
                 maxWidth={120}
