@@ -132,18 +132,55 @@ private enum TerminalInputSequence {
       return input
     }
   }
+
+  static func normalizingPastedText(_ input: String) -> String {
+    input
+      .replacingOccurrences(of: "\r\n", with: carriageReturn)
+      .replacingOccurrences(of: "\n", with: carriageReturn)
+  }
 }
 
 private final class TerminalInputField: UITextField {
   var onDeleteBackward: (() -> Void)?
   var onInsert: ((String) -> Void)?
 
-  private static let hardwareKeyCommands = TerminalHardwareKeyEncoder.makeKeyCommands(
-    action: #selector(handleHardwareKeyCommand(_:))
-  )
+  private static let hardwareKeyCommands: [UIKeyCommand] = {
+    var commands = TerminalHardwareKeyEncoder.makeKeyCommands(
+      action: #selector(handleHardwareKeyCommand(_:))
+    )
+
+    let pasteCommand = UIKeyCommand(
+      input: "v",
+      modifierFlags: .command,
+      action: #selector(handlePasteCommand(_:))
+    )
+    pasteCommand.wantsPriorityOverSystemBehavior = true
+    commands.append(pasteCommand)
+
+    let shiftPasteCommand = UIKeyCommand(
+      input: "v",
+      modifierFlags: [.command, .shift],
+      action: #selector(handlePasteCommand(_:))
+    )
+    shiftPasteCommand.wantsPriorityOverSystemBehavior = true
+    commands.append(shiftPasteCommand)
+
+    return commands
+  }()
 
   override var keyCommands: [UIKeyCommand]? {
     Self.hardwareKeyCommands
+  }
+
+  override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+    if action == #selector(paste(_:)) {
+      return UIPasteboard.general.hasStrings
+    }
+    return super.canPerformAction(action, withSender: sender)
+  }
+
+  override func paste(_ sender: Any?) {
+    pasteClipboard()
   }
 
   override func deleteBackward() {
@@ -159,6 +196,17 @@ private final class TerminalInputField: UITextField {
       modifiers: command.modifierFlags
     ) else { return }
     onInsert?(sequence)
+  }
+
+  @objc
+  private func handlePasteCommand(_ command: UIKeyCommand) {
+    pasteClipboard()
+  }
+
+  private func pasteClipboard() {
+    guard let text = UIPasteboard.general.string, !text.isEmpty else { return }
+    let normalized = TerminalInputSequence.normalizingPastedText(text)
+    onInsert?(normalized)
   }
 }
 
