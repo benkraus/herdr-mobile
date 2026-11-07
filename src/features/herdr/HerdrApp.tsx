@@ -96,6 +96,7 @@ function Navigator(props: {
   onSelectSpace: (workspaceId: string) => void;
   onSelectPane: (paneId: string) => void;
   onCreateSpace: () => void;
+  onRenameSpace: (workspace: WorkspaceView) => void;
   onCreateTab: (workspace: WorkspaceView) => Promise<void>;
   onCreateWorktree: (workspace: WorkspaceView) => void;
   onRemoveWorktree: (workspace: WorkspaceView) => void;
@@ -118,6 +119,12 @@ function Navigator(props: {
     const selected = workspace.workspaceId === props.selectedWorkspaceId;
     const creatingTab = props.creatingTabWorkspaceId === workspace.workspaceId;
     const actions = [
+      {
+        id: "rename-space",
+        title: "Rename space",
+        image: "pencil",
+        attributes: { disabled: !props.canWrite },
+      },
       {
         id: "new-shell-tab",
         title: "New shell tab",
@@ -151,49 +158,59 @@ function Navigator(props: {
         attributes: { disabled: !props.canWrite, destructive: true },
       },
     ];
+    const handleAction = ({ nativeEvent }: { nativeEvent: { event: string } }) => {
+      if (nativeEvent.event === "rename-space") props.onRenameSpace(workspace);
+      else if (nativeEvent.event === "new-shell-tab") void props.onCreateTab(workspace);
+      else if (nativeEvent.event === "new-worktree") props.onCreateWorktree(workspace);
+      else if (nativeEvent.event === "remove-worktree") props.onRemoveWorktree(workspace);
+      else if (nativeEvent.event === "close-space") props.onCloseSpace(workspace);
+    };
     return (
       <View
         key={workspace.workspaceId}
         className={linked ? "ml-4 border-l border-border-subtle" : ""}
       >
         <View className="mr-2 flex-row items-center">
-          <Pressable
-            accessibilityRole="button"
-            accessibilityState={{ selected }}
-            accessibilityLabel={`${linked ? "Worktree" : "Workspace"} ${workspace.label}`}
-            onPress={() => props.onSelectSpace(workspace.workspaceId)}
-            className={`min-h-14 min-w-0 flex-1 flex-row items-center gap-2.5 rounded-xl py-2.5 active:opacity-65 ${
-              linked ? "ml-2 pl-3" : "ml-2 pl-3"
-            } ${selected ? "bg-subtle" : ""}`}
+          <ControlPillMenu
+            actions={actions}
+            title={workspace.label}
+            shouldOpenOnLongPress
+            className="flex-1"
+            onPressAction={handleAction}
           >
-            <SymbolView
-              name={linked ? "arrow.triangle.branch" : "folder.fill"}
-              size={linked ? 15 : 17}
-              tintColor={mutedIcon}
-              type="monochrome"
-            />
-            <View className="min-w-0 flex-1">
-              <Text className="text-sm font-t3-bold" numberOfLines={1}>
-                {workspace.label}
-              </Text>
-              <Text className="mt-0.5 text-3xs text-foreground-muted" numberOfLines={1}>
-                {linked
-                  ? workspace.worktree?.checkoutPath
-                  : (workspace.worktree?.repoRoot ?? `${workspace.tabCount} tabs`)}
-              </Text>
-            </View>
-            <View className={`h-2 w-2 rounded-full ${statusDotClass(status)}`} />
-          </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ selected }}
+              accessibilityLabel={`${linked ? "Worktree" : "Workspace"} ${workspace.label}`}
+              onPress={() => props.onSelectSpace(workspace.workspaceId)}
+              className={`min-h-14 min-w-0 flex-1 flex-row items-center gap-2.5 rounded-xl py-2.5 active:opacity-65 ${
+                linked ? "ml-2 pl-3" : "ml-2 pl-3"
+              } ${selected ? "bg-subtle" : ""}`}
+            >
+              <SymbolView
+                name={linked ? "arrow.triangle.branch" : "folder.fill"}
+                size={linked ? 15 : 17}
+                tintColor={mutedIcon}
+                type="monochrome"
+              />
+              <View className="min-w-0 flex-1">
+                <Text className="text-sm font-t3-bold" numberOfLines={1}>
+                  {workspace.label}
+                </Text>
+                <Text className="mt-0.5 text-3xs text-foreground-muted" numberOfLines={1}>
+                  {linked
+                    ? workspace.worktree?.checkoutPath
+                    : (workspace.worktree?.repoRoot ?? `${workspace.tabCount} tabs`)}
+                </Text>
+              </View>
+              <View className={`h-2 w-2 rounded-full ${statusDotClass(status)}`} />
+            </Pressable>
+          </ControlPillMenu>
           {selected ? (
             <ControlPillMenu
               actions={actions}
               title={workspace.label}
-              onPressAction={({ nativeEvent }) => {
-                if (nativeEvent.event === "new-shell-tab") void props.onCreateTab(workspace);
-                else if (nativeEvent.event === "new-worktree") props.onCreateWorktree(workspace);
-                else if (nativeEvent.event === "remove-worktree") props.onRemoveWorktree(workspace);
-                else if (nativeEvent.event === "close-space") props.onCloseSpace(workspace);
-              }}
+              onPressAction={handleAction}
             >
               <Pressable
                 accessibilityRole="button"
@@ -766,6 +783,85 @@ function WorktreeRemoveSheet(props: {
   );
 }
 
+function SpaceRenameSheet(props: {
+  workspace: WorkspaceView | null;
+  onClose: () => void;
+  onRename: (label: string) => Promise<void>;
+}) {
+  const insets = useSafeAreaInsets();
+  const [label, setLabel] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!props.workspace) return;
+    setLabel(props.workspace.label);
+    setError(null);
+  }, [props.workspace]);
+
+  const rename = async () => {
+    const normalized = label.trim();
+    if (!normalized) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await props.onRename(normalized);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Space could not be renamed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const bottomInset = safeBottomInset(insets.bottom, Platform.OS, false);
+  return (
+    <Modal
+      visible={props.workspace !== null}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={props.onClose}
+    >
+      <KeyboardAvoidingView automaticOffset behavior="padding" className="flex-1 bg-screen">
+        <View className="flex-1" style={{ paddingBottom: bottomInset }}>
+          <SheetHeader title="Rename space" onClose={props.onClose} />
+          <View className="flex-1 gap-5 px-5 py-7">
+            <View>
+              <Text className="mb-2 text-2xs font-t3-bold uppercase tracking-wider text-foreground-muted">
+                Space name
+              </Text>
+              <AppTextInput
+                accessibilityLabel="Space name"
+                value={label}
+                onChangeText={setLabel}
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoFocus
+                maxLength={128}
+                returnKeyType="done"
+                onSubmitEditing={() => void rename()}
+              />
+            </View>
+            {error ? <ErrorBanner message={error} /> : null}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Save space name"
+              disabled={busy || !label.trim()}
+              onPress={() => void rename()}
+              className="h-13 items-center justify-center rounded-full bg-primary active:opacity-70 disabled:opacity-40"
+            >
+              {busy ? (
+                <ActivityIndicator />
+              ) : (
+                <Text className="font-t3-bold text-primary-foreground">Rename space</Text>
+              )}
+            </Pressable>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
 function TabRenameSheet(props: {
   tab: TabView | null;
   onClose: () => void;
@@ -859,6 +955,7 @@ export function HerdrApp() {
   const [createTarget, setCreateTarget] = useState<WorkspaceView | null>(null);
   const [removeTarget, setRemoveTarget] = useState<WorkspaceView | null>(null);
   const [renameTarget, setRenameTarget] = useState<TabView | null>(null);
+  const [renameSpaceTarget, setRenameSpaceTarget] = useState<WorkspaceView | null>(null);
   const [creatingTabWorkspaceId, setCreatingTabWorkspaceId] = useState<string>();
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>();
   const [selectedTabId, setSelectedTabId] = useState<string>();
@@ -1168,6 +1265,13 @@ export function HerdrApp() {
     if (!result.ok) throw new Error(result.error);
   };
 
+  const renameSpace = async (label: string) => {
+    if (!renameSpaceTarget) return;
+    const result = await herdr.renameWorkspace(renameSpaceTarget.workspaceId, label);
+    if (!result.ok) throw new Error(result.error);
+    setRenameSpaceTarget(null);
+  };
+
   const renameTab = async (label: string) => {
     if (!renameTarget) return;
     const result = await herdr.renameTab(renameTarget.tabId, label);
@@ -1247,6 +1351,7 @@ export function HerdrApp() {
       onSelectSpace={selectSpace}
       onSelectPane={selectPane}
       onCreateSpace={openCreateSpace}
+      onRenameSpace={setRenameSpaceTarget}
       onCreateTab={createShellTab}
       onCreateWorktree={setCreateTarget}
       onRemoveWorktree={setRemoveTarget}
@@ -1574,6 +1679,11 @@ export function HerdrApp() {
         tab={renameTarget}
         onClose={() => setRenameTarget(null)}
         onRename={renameTab}
+      />
+      <SpaceRenameSheet
+        workspace={renameSpaceTarget}
+        onClose={() => setRenameSpaceTarget(null)}
+        onRename={renameSpace}
       />
       <WorkspaceBrowserSheet
         visible={workspaceBrowserOpen}
