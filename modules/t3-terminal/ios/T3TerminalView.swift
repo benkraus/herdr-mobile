@@ -329,6 +329,7 @@ public final class T3TerminalView: ExpoView, UITextFieldDelegate {
     terminalViewport.addGestureRecognizer(focusTapGesture)
     scrollPanGesture.addTarget(self, action: #selector(handleViewportPan(_:)))
     scrollPanGesture.maximumNumberOfTouches = 1
+    scrollPanGesture.allowedScrollTypesMask = [.continuous, .discrete]
     scrollPanGesture.cancelsTouchesInView = false
     terminalViewport.addGestureRecognizer(scrollPanGesture)
 
