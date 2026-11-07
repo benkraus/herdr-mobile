@@ -23,6 +23,8 @@ import { ErrorBanner } from "../../components/ErrorBanner";
 import { showConfirmDialog } from "../../components/ConfirmDialogHost";
 import { GlassSafeAreaView } from "../../components/GlassSafeAreaView";
 import { LoadingStrip } from "../../components/LoadingStrip";
+import * as Clipboard from "expo-clipboard";
+import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { TerminalSurface } from "../terminal/NativeTerminalSurface";
 import { TerminalKeyboardAccessory } from "../terminal/TerminalKeyboardAccessory";
 import {
@@ -1216,6 +1218,49 @@ export function HerdrApp() {
         return;
       }
 
+      if (action.kind === "paste") {
+        void (async () => {
+          try {
+            const text = await Clipboard.getStringAsync();
+            if (text) {
+              handleTerminalInput(text);
+            }
+          } catch (error) {
+            console.warn("Failed to paste from clipboard", error);
+          }
+        })();
+        return;
+      }
+
+      if (action.kind === "copy-buffer") {
+        const text = presentedOutput?.text;
+        if (text) {
+          copyTextWithHaptic(text, { target: "terminal-buffer" });
+        }
+        return;
+      }
+
+      if (action.kind === "new-space") {
+        openCreateSpace();
+        return;
+      }
+
+      if (action.kind === "close-session") {
+        showConfirmDialog({
+          title: "Close session?",
+          message: `Close ${selectedPane.label} and stop everything running in it?`,
+          confirmText: "Close session",
+          destructive: true,
+          onConfirm: () =>
+            void closeTab(selectedPane).catch((error: unknown) =>
+              setTerminalError(
+                error instanceof Error ? error.message : "Session could not be closed.",
+              ),
+            ),
+        });
+        return;
+      }
+
       setPendingModifierState({ paneId: selectedPane.paneId, value: null });
       const semanticKey = resolveTerminalAccessorySemanticKey(action, pendingModifier);
       if (semanticKey !== null) {
@@ -1232,7 +1277,16 @@ export function HerdrApp() {
       }
       sendTerminalInput(resolveTerminalAccessoryInput(action, pendingModifier));
     },
-    [herdr, pendingModifier, selectedPane, sendTerminalInput],
+    [
+      closeTab,
+      handleTerminalInput,
+      herdr,
+      openCreateSpace,
+      pendingModifier,
+      presentedOutput?.text,
+      selectedPane,
+      sendTerminalInput,
+    ],
   );
 
   const navigator = (

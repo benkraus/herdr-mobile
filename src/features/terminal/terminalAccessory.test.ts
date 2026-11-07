@@ -26,6 +26,10 @@ describe("TERMINAL_ACCESSORY_ACTIONS", () => {
       "pipe",
       "tilde",
       "dash",
+      "paste",
+      "copy-buffer",
+      "new-space",
+      "close-session",
       "clear",
     ]);
   });
@@ -51,7 +55,20 @@ describe("TERMINAL_ACCESSORY_ACTIONS", () => {
         (action) => action.key,
       ),
     );
-    expect(getTerminalAccessoryActions({ includeClear: true })).toBe(TERMINAL_ACCESSORY_ACTIONS);
+    expect(getTerminalAccessoryActions({ includeClear: true })).toEqual(
+      TERMINAL_ACCESSORY_ACTIONS,
+    );
+  });
+
+  it("can filter new space and close session actions", () => {
+    const withoutWorkspaceActions = getTerminalAccessoryActions({
+      includeNewSpace: false,
+      includeCloseSession: false,
+    });
+    expect(withoutWorkspaceActions.map((action) => action.key)).not.toContain("new-space");
+    expect(withoutWorkspaceActions.map((action) => action.key)).not.toContain("close-session");
+    expect(withoutWorkspaceActions.map((action) => action.key)).toContain("paste");
+    expect(withoutWorkspaceActions.map((action) => action.key)).toContain("copy-buffer");
   });
 });
 

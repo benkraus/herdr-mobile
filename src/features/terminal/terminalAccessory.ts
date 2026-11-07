@@ -17,6 +17,30 @@ export type TerminalAccessoryAction =
       readonly key: string;
       readonly label: string;
       readonly modifier: TerminalModifier;
+    }
+  | {
+      readonly kind: "paste";
+      readonly key: "paste";
+      readonly label: string;
+      readonly accessibilityLabel?: string;
+    }
+  | {
+      readonly kind: "copy-buffer";
+      readonly key: "copy-buffer";
+      readonly label: string;
+      readonly accessibilityLabel?: string;
+    }
+  | {
+      readonly kind: "new-space";
+      readonly key: "new-space";
+      readonly label: string;
+      readonly accessibilityLabel?: string;
+    }
+  | {
+      readonly kind: "close-session";
+      readonly key: "close-session";
+      readonly label: string;
+      readonly accessibilityLabel?: string;
     };
 
 export const TERMINAL_ACCESSORY_ACTIONS: ReadonlyArray<TerminalAccessoryAction> = [
@@ -48,19 +72,38 @@ export const TERMINAL_ACCESSORY_ACTIONS: ReadonlyArray<TerminalAccessoryAction> 
   { kind: "send", key: "pipe", label: "|", accessibilityLabel: "Pipe", data: "|" },
   { kind: "send", key: "tilde", label: "~", accessibilityLabel: "Tilde", data: "~" },
   { kind: "send", key: "dash", label: "-", accessibilityLabel: "Dash", data: "-" },
+  { kind: "paste", key: "paste", label: "paste", accessibilityLabel: "Paste from clipboard" },
+  {
+    kind: "copy-buffer",
+    key: "copy-buffer",
+    label: "copy",
+    accessibilityLabel: "Copy terminal buffer",
+  },
+  { kind: "new-space", key: "new-space", label: "+ space", accessibilityLabel: "New space" },
+  {
+    kind: "close-session",
+    key: "close-session",
+    label: "close",
+    accessibilityLabel: "Close active session",
+  },
   { kind: "clear", key: "clear", label: "clear" },
 ];
 
-const TERMINAL_ACCESSORY_ACTIONS_WITHOUT_CLEAR = TERMINAL_ACCESSORY_ACTIONS.filter(
-  (action) => action.kind !== "clear",
-);
-
-export function getTerminalAccessoryActions(options: {
-  readonly includeClear: boolean;
+export function getTerminalAccessoryActions(options?: {
+  readonly includeClear?: boolean;
+  readonly includeNewSpace?: boolean;
+  readonly includeCloseSession?: boolean;
 }): ReadonlyArray<TerminalAccessoryAction> {
-  return options.includeClear
-    ? TERMINAL_ACCESSORY_ACTIONS
-    : TERMINAL_ACCESSORY_ACTIONS_WITHOUT_CLEAR;
+  const includeClear = options?.includeClear ?? false;
+  const includeNewSpace = options?.includeNewSpace ?? true;
+  const includeCloseSession = options?.includeCloseSession ?? true;
+
+  return TERMINAL_ACCESSORY_ACTIONS.filter((action) => {
+    if (action.kind === "clear") return includeClear;
+    if (action.kind === "new-space") return includeNewSpace;
+    if (action.kind === "close-session") return includeCloseSession;
+    return true;
+  });
 }
 
 export function applyCtrlModifier(input: string): string {
